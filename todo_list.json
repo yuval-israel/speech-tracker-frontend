@@ -1,0 +1,32 @@
+[
+  {
+    "id": 1,
+    "title": "Initialize git repository (if missing)",
+    "description": "Run `git init` (if .git is not present) and create the `main` branch.",
+    "status": "not-started"
+  },
+  {
+    "id": 2,
+    "title": "Add .gitignore and ensure README.md",
+    "description": "Create a recommended Expo/React Native `.gitignore` and confirm `README.md` exists.",
+    "status": "not-started"
+  },
+  {
+    "id": 3,
+    "title": "Create GitHub repository (choose gh / web / API)",
+    "description": "Create the remote repository via `gh`, GitHub web UI, or the REST API using a PAT.",
+    "status": "not-started"
+  },
+  {
+    "id": 4,
+    "title": "Add remote and push initial commit",
+    "description": "Add `origin` remote and push the local `main` branch with `git push -u origin main`.",
+    "status": "not-started"
+  },
+  {
+    "id": 5,
+    "title": "Verify repository on GitHub and enable branch protections",
+    "description": "Use `git remote -v`, `gh repo view`, or open the GitHub URL, then configure branch protection rules for `main`.",
+    "status": "not-started"
+  }
+]
