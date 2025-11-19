@@ -1,19 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Button, StyleSheet, Platform } from 'react-native';
+import { View, Text, Button, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { useAudioRecorder, RecordingPresets, AudioModule } from 'expo-audio';
 import { authFetch } from '../api';
 
-export default function RecordScreen({ token, child, onAnalysisReady, onCancel }) {
+export default function RecordScreen({ token, child, onAnalysisReady, onRecordingFinished, onCancel }) {
   const [isRecording, setIsRecording] = useState(false);
   const [hasRecording, setHasRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState(null); // for web WAV blob
   const [error, setError] = useState('');
   const [isUploading, setIsUploading] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0); // seconds
 
   // Refs for media recorder (web) and polling interval
   const mediaRecorderRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const pollRef = useRef(null);
+  const durationRef = useRef(null);
+  const pollStartRef = useRef(null);
 
   // Expo Audio Recorder for native platforms
   const audioRecorder = Platform.OS !== 'web' ? useAudioRecorder(RecordingPresets.HIGH_QUALITY) : null;
@@ -34,6 +37,9 @@ export default function RecordScreen({ token, child, onAnalysisReady, onCancel }
       if (pollRef.current) {
         clearInterval(pollRef.current);
       }
+      if (durationRef.current) {
+        clearInterval(durationRef.current);
+      }
       // Stop media stream if any
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach(track => track.stop());
@@ -43,6 +49,7 @@ export default function RecordScreen({ token, child, onAnalysisReady, onCancel }
 
   const startRecording = async () => {
     setError('');
+    setRecordingDuration(0);
     // Start recording depending on platform
     if (Platform.OS === 'web') {
       try {
@@ -78,6 +85,11 @@ export default function RecordScreen({ token, child, onAnalysisReady, onCancel }
         };
         mediaRecorderRef.current = mr;
         mr.start();
+        // start duration timer
+        if (durationRef.current) clearInterval(durationRef.current);
+        durationRef.current = setInterval(() => {
+          setRecordingDuration(d => d + 1);
+        }, 1000);
         setIsRecording(true);
       } catch (err) {
         console.error('MediaRecorder start error:', err);
@@ -87,6 +99,11 @@ export default function RecordScreen({ token, child, onAnalysisReady, onCancel }
       try {
         await audioRecorder.prepareToRecordAsync();
         audioRecorder.record();
+        // start duration timer
+        if (durationRef.current) clearInterval(durationRef.current);
+        durationRef.current = setInterval(() => {
+          setRecordingDuration(d => d + 1);
+        }, 1000);
         setIsRecording(true);
       } catch (err) {
         console.error('Error starting recording:', err);
@@ -102,11 +119,19 @@ export default function RecordScreen({ token, child, onAnalysisReady, onCancel }
         mediaRecorderRef.current.stop();
       }
       setIsRecording(false);
+      if (durationRef.current) {
+        clearInterval(durationRef.current);
+        durationRef.current = null;
+      }
       // hasRecording will be set in onstop event
     } else {
       try {
         await audioRecorder.stop();
         setIsRecording(false);
+        if (durationRef.current) {
+          clearInterval(durationRef.current);
+          durationRef.current = null;
+        }
         setHasRecording(true);
       } catch (err) {
         console.error('Error stopping recording:', err);
@@ -118,6 +143,9 @@ export default function RecordScreen({ token, child, onAnalysisReady, onCancel }
   const uploadRecording = async () => {
     setError('');
     setIsUploading(true);
+    // set polling start time for timeout
+    pollStartRef.current = Date.now();
+    const POLL_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
     try {
       // Prepare form data with the audio file
       const formData = new FormData();
@@ -125,7 +153,15 @@ export default function RecordScreen({ token, child, onAnalysisReady, onCancel }
         formData.append('file', new File([recordedBlob], 'audio.wav', { type: 'audio/wav' }));
       } else {
         // Use recorded file URI
-        const fileUri = audioRecorder.audioRecorder?.uri || audioRecorder.uri;
+        let fileUri = null;
+        try {
+          if (typeof audioRecorder.getURI === 'function') {
+            fileUri = await audioRecorder.getURI();
+          }
+        } catch (e) {
+          // ignore
+        }
+        fileUri = fileUri || audioRecorder.audioRecorder?.uri || audioRecorder.uri;
         formData.append('file', { uri: fileUri, name: 'audio.wav', type: 'audio/wav' });
       }
       const res = await authFetch(`/recordings?child_id=${child.id}`, token, {
@@ -147,11 +183,26 @@ export default function RecordScreen({ token, child, onAnalysisReady, onCancel }
             throw new Error('Status check failed');
           }
           const rec = await statusRes.json();
+          // timeout check
+          if (pollStartRef.current && Date.now() - pollStartRef.current > POLL_TIMEOUT_MS) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+            setIsUploading(false);
+            setError('Analysis timed out. Please try again later.');
+            return;
+          }
+
           if (rec.status === 'ready') {
             clearInterval(pollRef.current);
             pollRef.current = null;
             setIsUploading(false);
-            onAnalysisReady(recId);
+            // Prefer the newer prop name `onRecordingFinished`, but fall back to
+            // `onAnalysisReady` for backward compatibility.
+            if (typeof onRecordingFinished === 'function') {
+              onRecordingFinished(recId);
+            } else if (typeof onAnalysisReady === 'function') {
+              onAnalysisReady(recId);
+            }
           } else if (rec.status === 'failed') {
             clearInterval(pollRef.current);
             pollRef.current = null;
@@ -217,24 +268,35 @@ export default function RecordScreen({ token, child, onAnalysisReady, onCancel }
   return (
     <View style={styles.container}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      {!isRecording && !hasRecording && !isUploading && (
-        <Button title="Start Recording" onPress={startRecording} />
-      )}
-      {isRecording && (
-        <Button title="Stop Recording" onPress={stopRecording} />
-      )}
-      {!isRecording && hasRecording && !isUploading && (
+      {!isUploading && (
         <>
-          <Button title="Analyze Recording" onPress={uploadRecording} />
-          <Button title="Record Again" color="#555" onPress={() => {
-            setHasRecording(false);
-            setRecordedBlob(null);
-            setError('');
-          }} />
+          {!isRecording && !hasRecording && (
+            <Button title="Start Recording" onPress={startRecording} />
+          )}
+          {isRecording && (
+            <Button title="Stop Recording" onPress={stopRecording} />
+          )}
+          {!isRecording && hasRecording && (
+            <>
+              <Button title="Analyze Recording" onPress={uploadRecording} />
+              <Button title="Record Again" color="#555" onPress={() => {
+                setHasRecording(false);
+                setRecordedBlob(null);
+                setError('');
+                setRecordingDuration(0);
+              }} />
+            </>
+          )}
         </>
       )}
       {isUploading && (
-        <Text style={styles.processing}>Processing recording, please wait...</Text>
+        <View style={{ alignItems: 'center', marginVertical: 16 }}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.processing}>Processing recording, please wait...</Text>
+        </View>
+      )}
+      {(isRecording || recordingDuration > 0) && (
+        <Text style={styles.duration}>Duration: {Math.floor(recordingDuration / 60)}:{String(recordingDuration % 60).padStart(2, '0')}</Text>
       )}
       <Button title="Cancel" color="#555" onPress={onCancel} disabled={isRecording || isUploading} />
     </View>

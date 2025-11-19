@@ -1,4 +1,7 @@
-import React, { useState } from 'react';
+import React, { createContext, useState, useEffect } from 'react';
+import authService from './services/auth';
+import { setOnUnauthorized } from './api';
+import { ActivityIndicator, View } from 'react-native';
 import { Platform } from 'react-native';
 import LoginScreen from './screens/LoginScreen';
 import RegisterScreen from './screens/RegisterScreen';
@@ -11,18 +14,30 @@ import { StatusBar } from 'expo-status-bar';
 
 export default function App() {
   const [token, setToken] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
   const [currentChild, setCurrentChild] = useState(null);
   const [currentScreen, setCurrentScreen] = useState('login');
   const [analysisRecordId, setAnalysisRecordId] = useState(null);
 
-  // Handlers for navigation and state updates
-  const handleLoginSuccess = (authToken) => {
+  // Expose a simple AuthContext for screens to use in later steps
+  const AuthContext = createContext({
+    token: null,
+    setToken: () => {},
+    logout: () => {},
+  });
+
+  // Handlers for navigation and state updates (named to match requested props)
+  const onLogin = (authToken) => {
     setToken(authToken);
+    // persist token
+    authService.setToken(authToken).catch(() => {});
     setCurrentScreen('childList');
   };
-  const handleRegisterSuccess = (authToken) => {
+
+  const onRegisterSuccess = (authToken) => {
     if (authToken) {
       setToken(authToken);
+      authService.setToken(authToken).catch(() => {});
       // After sign up, navigate to Add Child screen to create first child
       setCurrentScreen('addChild');
     } else {
@@ -30,42 +45,80 @@ export default function App() {
       setCurrentScreen('login');
     }
   };
+
   const handleLogout = () => {
     setToken(null);
     setCurrentChild(null);
+    setAnalysisRecordId(null);
     setCurrentScreen('login');
+    authService.clearToken().catch(() => {});
   };
-  const handleChildSelected = (child) => {
+
+  // On mount try to restore token from storage
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const t = await authService.getToken();
+        if (mounted && t) {
+          setToken(t);
+        }
+      } catch (err) {
+        console.error('Error restoring token', err);
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    })();
+    // register global unauthorized handler to force logout
+    setOnUnauthorized(() => {
+      // ensure we run logout on the JS thread
+      handleLogout();
+    });
+    return () => { mounted = false; setOnUnauthorized(null); };
+  }, []);
+
+  const onChildSelected = (child) => {
     setCurrentChild(child);
     setCurrentScreen('childDetail');
   };
-  const handleChildAdded = (child) => {
+
+  const onChildAdded = (child) => {
     setCurrentChild(child);
     setCurrentScreen('childDetail');
   };
-  const handleStartRecording = () => {
+
+  const onStartRecording = (child) => {
+    if (child) setCurrentChild(child);
     setCurrentScreen('record');
   };
-  const handleAnalysisRequested = (recordingId) => {
+
+  const onRecordingFinished = (recordingId) => {
     setAnalysisRecordId(recordingId);
     setCurrentScreen('analysis');
   };
 
   // Determine which screen component to show
   let screenComponent;
+  if (isLoading) {
+    return (
+      <View style={{flex:1,alignItems:'center',justifyContent:'center'}}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
   if (!token) {
     // Not logged in: show login or register
     if (currentScreen === 'register') {
       screenComponent = (
         <RegisterScreen 
-          onRegisterSuccess={handleRegisterSuccess}
+          onRegisterSuccess={onRegisterSuccess}
           onSwitchToLogin={() => setCurrentScreen('login')}
         />
       );
     } else {
       screenComponent = (
         <LoginScreen
-          onLogin={handleLoginSuccess}
+          onLogin={onLogin}
           onSwitchToRegister={() => setCurrentScreen('register')}
         />
       );
@@ -77,7 +130,7 @@ export default function App() {
         screenComponent = (
           <ChildListScreen
             token={token}
-            onSelectChild={handleChildSelected}
+            onChildSelected={onChildSelected}
             onAddChild={() => setCurrentScreen('addChild')}
             onLogout={handleLogout}
           />
@@ -87,7 +140,7 @@ export default function App() {
         screenComponent = (
           <AddChildScreen
             token={token}
-            onChildAdded={handleChildAdded}
+            onChildAdded={onChildAdded}
             onCancel={() => setCurrentScreen('childList')}
           />
         );
@@ -97,8 +150,8 @@ export default function App() {
           <ChildDetailScreen
             token={token}
             child={currentChild}
-            onStartRecording={handleStartRecording}
-            onViewAnalysis={(id) => handleAnalysisRequested(id)}
+            onStartRecording={onStartRecording}
+            onViewAnalysis={(id) => onRecordingFinished(id)}
             onBack={() => setCurrentScreen('childList')}
           />
         );
@@ -108,7 +161,7 @@ export default function App() {
           <RecordScreen
             token={token}
             child={currentChild}
-            onAnalysisReady={(id) => handleAnalysisRequested(id)}
+            onRecordingFinished={(id) => onRecordingFinished(id)}
             onCancel={() => setCurrentScreen('childDetail')}
           />
         );
@@ -127,7 +180,7 @@ export default function App() {
         screenComponent = (
           <ChildListScreen
             token={token}
-            onSelectChild={handleChildSelected}
+            onChildSelected={onChildSelected}
             onAddChild={() => setCurrentScreen('addChild')}
             onLogout={handleLogout}
           />

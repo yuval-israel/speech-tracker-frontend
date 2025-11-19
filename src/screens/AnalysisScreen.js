@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { authFetch } from '../api';
+import { apiJson } from '../api';
 
 export default function AnalysisScreen({ token, recordingId, child, onBack }) {
   const [analysis, setAnalysis] = useState(null);
@@ -10,17 +10,19 @@ export default function AnalysisScreen({ token, recordingId, child, onBack }) {
     let isMounted = true;
     const fetchAnalysis = async () => {
       try {
-        const res = await authFetch(`/analysis/recordings/${recordingId}`, token);
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          const detail = data.detail || 'Analysis not found.';
-          throw new Error(detail);
-        }
-        const data = await res.json();
+        const data = await apiJson(`/analysis/recordings/${recordingId}`, token);
         if (isMounted) setAnalysis(data);
       } catch (err) {
         console.error('Error fetching analysis:', err);
-        if (isMounted) setError(err.message || 'Failed to load analysis.');
+        if (isMounted) {
+          if (err && err.status === 404) {
+            setError('Analysis not yet available. Try again later.');
+          } else if (err && err.message) {
+            setError(err.message);
+          } else {
+            setError('Failed to load analysis.');
+          }
+        }
       }
     };
     fetchAnalysis();

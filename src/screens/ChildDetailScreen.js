@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, Button, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { authFetch } from '../api';
+import { View, Text, Button, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { apiJson } from '../api';
 
 export default function ChildDetailScreen({ token, child, onStartRecording, onViewAnalysis, onBack }) {
   const [recordings, setRecordings] = useState([]);
@@ -14,32 +14,30 @@ export default function ChildDetailScreen({ token, child, onStartRecording, onVi
     // Fetch child's recordings
     const fetchRecordings = async () => {
       try {
-        const res = await authFetch(`/recordings/${childId}`, token);
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          const detail = data.detail || 'Failed to load recordings.';
-          throw new Error(detail);
-        }
-        const data = await res.json();
-        if (isMounted) setRecordings(data);
+        const data = await apiJson(`/children/${childId}/recordings`, token);
+        if (isMounted) setRecordings(data || []);
       } catch (err) {
         console.error('Error fetching recordings:', err);
-        if (isMounted) setError(err.message || 'Error loading recordings.');
+        if (isMounted) {
+          if (err && err.status === 401) {
+            setError('Session expired. Please log in again.');
+          } else if (err && err.message) {
+            setError(err.message);
+          } else {
+            setError('Error loading recordings.');
+          }
+        }
       }
     };
     // Fetch global analysis summary for child
     const fetchGlobal = async () => {
       try {
-        const res = await authFetch(`/analysis/children/${childId}/global`, token);
-        if (res.ok) {
-          const data = await res.json();
-          if (isMounted) setGlobalAnalysis(data);
-        } else {
-          // If 404 or error, no global analysis yet
-          if (isMounted) setGlobalAnalysis(null);
-        }
+        const data = await apiJson(`/analysis/children/${childId}/global`, token);
+        if (isMounted) setGlobalAnalysis(data);
       } catch (err) {
-        console.error('Error fetching global analysis:', err);
+        // If 404 or other error, treat as no global analysis available
+        if (isMounted) setGlobalAnalysis(null);
+        console.error('Error fetching global analysis (may be absent):', err);
       }
     };
     fetchRecordings();
@@ -71,28 +69,32 @@ export default function ChildDetailScreen({ token, child, onStartRecording, onVi
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <ScrollView style={styles.list}>
+        {recordings.length === 0 && !error ? (
+          <Text style={styles.noRecordings}>No recordings yet.</Text>
+        ) : null}
         {recordings.map(rec => {
-          const status = rec.status;
-          const ready = status === 'ready';
+          const status = rec.status || rec.state || 'unknown';
+          const ready = status === 'ready' || status === 'completed';
           return (
             <TouchableOpacity
               key={rec.id}
               style={styles.recordingItem}
-              onPress={() => ready && onViewAnalysis(rec.id)}
-              disabled={!ready}
             >
-              <Text style={styles.recordingText}>
-                {formatDateTime(rec.created_at)}{ready ? '' : ' (' + status + ')'}
-              </Text>
+              <Text style={styles.recordingText}>{formatDateTime(rec.created_at)}</Text>
+              <Text style={styles.recordingStatus}>{ready ? 'Completed' : status}</Text>
+              {ready ? (
+                <Button title="View Analysis" onPress={() => onViewAnalysis(rec.id)} />
+              ) : (
+                <Text style={styles.processingText}>Processing...</Text>
+              )}
             </TouchableOpacity>
           );
         })}
-        {recordings.length === 0 && !error ? (
-          <Text style={styles.noRecordings}>No recordings yet.</Text>
-        ) : null}
       </ScrollView>
-      <Button title="New Recording" onPress={onStartRecording} />
+      <View style={styles.actions}>
+        <Button title="New Recording" onPress={() => onStartRecording(child)} />
       <Button title="Back to Children" color="#555" onPress={onBack} />
+      </View>
     </View>
   );
 }
@@ -141,5 +143,20 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginVertical: 20
+  }
+  ,
+  recordingStatus: {
+    fontSize: 14,
+    color: '#333',
+    marginTop: 6
+  },
+  processingText: {
+    color: '#888',
+    marginTop: 6
+  },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12
   }
 });

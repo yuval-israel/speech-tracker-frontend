@@ -1,38 +1,37 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Button, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { authFetch } from '../api';
+import { apiJson } from '../api';
 
-export default function ChildListScreen({ token, onSelectChild, onAddChild, onLogout }) {
+export default function ChildListScreen({ token, onChildSelected, onAddChild, onLogout }) {
   const [children, setChildren] = useState([]);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const fetchChildren = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const data = await apiJson('/children/', token);
+      setChildren(data || []);
+    } catch (err) {
+      console.error('Error fetching children:', err);
+      if (err && err.status === 401) {
+        // apiJson will have triggered onUnauthorized already; show brief message
+        setError('Session expired. Please log in again.');
+        if (onLogout) onLogout();
+      } else if (err && err.message) {
+        setError(err.message);
+      } else {
+        setError('Network error. Please try again.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    // Fetch children list on mount
     let isMounted = true;
-    const fetchChildren = async () => {
-      try {
-        const res = await authFetch('/children', token);
-        if (!res.ok) {
-          if (res.status === 401) {
-            // Unauthorized (token might be expired or invalid)
-            setError('Session expired. Please log in again.');
-          } else {
-            const data = await res.json().catch(() => ({}));
-            const detail = data.detail || 'Failed to load children.';
-            setError(detail);
-          }
-        } else {
-          const data = await res.json();
-          if (isMounted) {
-            setChildren(data);
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching children:', err);
-        if (isMounted) setError('Network error. Please try again.');
-      }
-    };
-    fetchChildren();
+    if (isMounted) fetchChildren();
     return () => { isMounted = false; };
   }, [token]);
 
@@ -40,20 +39,25 @@ export default function ChildListScreen({ token, onSelectChild, onAddChild, onLo
     <View style={styles.container}>
       <Text style={styles.header}>My Children</Text>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <ScrollView style={styles.list}>
+      <ScrollView style={styles.list} refreshControl={null}>
+        {loading ? <Text style={styles.loading}>Loading...</Text> : null}
         {children.map(child => (
           <TouchableOpacity
             key={child.id}
             style={styles.childItem}
-            onPress={() => onSelectChild(child)}
+            onPress={() => onChildSelected(child)}
           >
             <Text style={styles.childName}>{child.name}</Text>
           </TouchableOpacity>
         ))}
-        {children.length === 0 && !error ? (
-          <Text style={styles.noChildren}>No child profiles found. Add a child to get started.</Text>
+        {!loading && children.length === 0 && !error ? (
+          <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+            <Text style={styles.noChildren}>No child profiles found.</Text>
+            <Button title="Add first child" onPress={onAddChild} />
+          </View>
         ) : null}
       </ScrollView>
+      <Button title="Refresh" onPress={fetchChildren} disabled={loading} />
       <Button title="Add Child" onPress={onAddChild} />
       <Button title="Log Out" color="#555" onPress={onLogout} />
     </View>
@@ -96,5 +100,11 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginVertical: 20
+  }
+  ,
+  loading: {
+    textAlign: 'center',
+    marginVertical: 8,
+    color: '#666'
   }
 });

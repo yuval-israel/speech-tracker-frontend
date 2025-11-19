@@ -1,0 +1,185 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Recorder Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 24px; }
+    button { margin: 6px; padding: 10px 14px; }
+    .status { margin-top: 12px; }
+    audio { display: block; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h2>Standalone Recorder Test</h2>
+  <p>Use this page to verify the browser MediaRecorder: start/stop, duration, playback and download.</p>
+  <div>
+    <button id="startBtn">Start Recording</button>
+    <button id="stopBtn" disabled>Stop Recording</button>
+    <button id="downloadBtn" disabled>Download</button>
+    <button id="uploadBtn" disabled>Upload</button>
+  </div>
+  <div style="margin-top:12px">
+    <label>Backend URL: <input id="backendUrl" type="text" size="40" value="http://localhost:8000" /></label>
+    <label style="margin-left:12px">Token: <input id="authToken" type="text" size="32" placeholder="Optional bearer token" /></label>
+  </div>
+    <div style="margin-top:8px">
+      <label>Child ID: <input id="childId" type="number" value="1" style="width:80px" /></label>
+      <label style="margin-left:12px">Upload format:
+        <select id="uploadFormat">
+          <option value="webm">webm (no conversion)</option>
+          <option value="wav">wav (convert in-browser)</option>
+        </select>
+      </label>
+    </div>
+  <div class="status">
+    <div><strong>Status:</strong> <span id="status">idle</span></div>
+    <div><strong>Duration:</strong> <span id="duration">0:00</span></div>
+    <div><strong>Blob size:</strong> <span id="size">0</span> bytes</div>
+  </div>
+  <audio id="player" controls></audio>
+
+  <script>
+    let mediaRecorder = null;
+    let chunks = [];
+    let stream = null;
+    let duration = 0;
+    let durationTimer = null;
+
+    const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const statusEl = document.getElementById('status');
+    const durationEl = document.getElementById('duration');
+    const sizeEl = document.getElementById('size');
+    const player = document.getElementById('player');
+
+    function formatTime(s) {
+      return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+    }
+
+    startBtn.onclick = async () => {
+      statusEl.textContent = 'requesting microphone...';
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        statusEl.textContent = 'permission denied or no mic';
+        console.error(err);
+        return;
+      }
+      chunks = [];
+      // prefer webm if supported
+      const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/ogg';
+      try {
+        mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      } catch (err) {
+        statusEl.textContent = 'MediaRecorder not supported';
+        console.error(err);
+        return;
+      }
+      mediaRecorder.ondataavailable = e => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+      mediaRecorder.onstart = () => {
+        statusEl.textContent = 'recording';
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+        downloadBtn.disabled = true;
+        duration = 0;
+        durationEl.textContent = formatTime(duration);
+        durationTimer = setInterval(() => {
+          duration++;
+          durationEl.textContent = formatTime(duration);
+        }, 1000);
+      };
+      mediaRecorder.onstop = () => {
+        statusEl.textContent = 'stopped';
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+        clearInterval(durationTimer);
+        const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
+        sizeEl.textContent = blob.size;
+        const url = URL.createObjectURL(blob);
+        player.src = url;
+        downloadBtn.disabled = false;
+        uploadBtn.disabled = false;
+        downloadBtn.onclick = () => {
+          const a = document.createElement('a');
+          a.href = url;
+          // filename based on mime
+          const ext = mediaRecorder.mimeType.includes('webm') ? 'webm' : (mediaRecorder.mimeType.includes('ogg') ? 'ogg' : 'audio');
+          a.download = 'recording.' + ext;
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+        };
+          uploadBtn.onclick = async () => {
+            uploadBtn.disabled = true;
+            statusEl.textContent = 'uploading...';
+            try {
+              const backend = document.getElementById('backendUrl').value || 'http://localhost:8000';
+              const token = document.getElementById('authToken').value || '';
+              const childId = document.getElementById('childId').value || '1';
+              const format = document.getElementById('uploadFormat').value || 'webm';
+              const uploadUrl = backend.replace(/\/$/, '') + '/recordings?child_id=' + encodeURIComponent(childId);
+              const fd = new FormData();
+              let uploadBlob = blob;
+              let filename = 'recording.webm';
+              let contentType = mediaRecorder.mimeType;
+              if (format === 'wav') {
+                // convert to WAV using AudioContext decode + interleaved PCM encoder
+                try {
+                  const arrayBuf = await blob.arrayBuffer();
+                  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                  const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
+                  const wavBuffer = encodeWav(audioBuf);
+                  uploadBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+                  filename = 'recording.wav';
+                  contentType = 'audio/wav';
+                  audioCtx.close();
+                } catch (convErr) {
+                  console.error('WAV conversion failed', convErr);
+                  statusEl.textContent = 'WAV conversion failed';
+                  uploadBtn.disabled = false;
+                  return;
+                }
+              }
+              fd.append('file', uploadBlob, filename);
+              const headers = {};
+              if (token) headers['Authorization'] = 'Bearer ' + token;
+              const res = await fetch(uploadUrl, { method: 'POST', body: fd, headers });
+              if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                statusEl.textContent = 'upload failed: ' + (data.detail || res.statusText);
+              } else {
+                const data = await res.json();
+                statusEl.textContent = 'uploaded, recording id: ' + (data.id || JSON.stringify(data));
+              }
+            } catch (err) {
+              console.error('upload error', err);
+              statusEl.textContent = 'upload error';
+            } finally {
+              uploadBtn.disabled = false;
+            }
+          };
+      };
+      mediaRecorder.onerror = (e) => {
+        console.error('recorder error', e);
+        statusEl.textContent = 'recorder error';
+      };
+      mediaRecorder.start();
+    };
+
+    stopBtn.onclick = () => {
+      if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+      }
+      // stop tracks
+      if (stream) {
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+      }
+    };
+  </script>
+</body>
+</html>

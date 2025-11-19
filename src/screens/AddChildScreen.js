@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, Button, StyleSheet, TouchableOpacity } from 'react-native';
-import { authFetch } from '../api';
+import { apiJson } from '../api';
 
 export default function AddChildScreen({ token, onChildAdded, onCancel }) {
   const [name, setName] = useState('');
   const [birthdate, setBirthdate] = useState('');  // expected format YYYY-MM-DD
   const [gender, setGender] = useState('male');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleAddChild = async () => {
     setError('');
@@ -14,23 +15,29 @@ export default function AddChildScreen({ token, onChildAdded, onCancel }) {
       setError('All fields are required.');
       return;
     }
+    // simple YYYY-MM-DD validation
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdate)) {
+      setError('Birthdate must be in YYYY-MM-DD format.');
+      return;
+    }
     try {
-      const res = await authFetch('/children', token, {
+      setLoading(true);
+      const data = await apiJson('/children', token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, birthdate, gender: gender.toLowerCase() })
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const detail = data.detail || 'Failed to add child.';
-        setError(detail);
-      } else {
-        const data = await res.json();
-        onChildAdded(data);
-      }
+      onChildAdded(data);
     } catch (err) {
       console.error('Error adding child:', err);
-      setError('Network error. Please try again.');
+      if (err && err.status === 401) {
+        setError('Session expired. Please log in again.');
+      } else if (err && err.message) {
+        setError(err.message);
+      } else {
+        setError('Network error. Please try again.');
+      }
+      setLoading(false);
     }
   };
 
@@ -59,8 +66,10 @@ export default function AddChildScreen({ token, onChildAdded, onCancel }) {
         </TouchableOpacity>
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Button title="Create Profile" onPress={handleAddChild} />
-      <Button title="Cancel" color="#555" onPress={onCancel} />
+      <View style={styles.actionRow}>
+        <Button title="Create Profile" onPress={handleAddChild} disabled={loading} />
+        <Button title="Cancel" color="#555" onPress={onCancel} />
+      </View>
     </View>
   );
 }
@@ -114,5 +123,11 @@ const styles = StyleSheet.create({
     color: 'red',
     marginBottom: 16,
     textAlign: 'center'
+  }
+  ,
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 12
   }
 });

@@ -1,53 +1,69 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet } from 'react-native';
-import { API_BASE } from '../api';
+import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { API_BASE, apiJson } from '../api';
+import PrimaryButton from '../components/PrimaryButton';
+import LoadingIndicator from '../components/LoadingIndicator';
 
 export default function RegisterScreen({ onRegisterSuccess, onSwitchToLogin }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleRegister = async () => {
     setError('');
+    // Client-side validation
     if (!username || !password) {
       setError('Please enter a username and password.');
       return;
     }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
+      return;
+    }
+    if (!/[0-9]/.test(password)) {
+      setError('Password must contain at least one number.');
+      return;
+    }
     try {
-      // Register new user
-      const response = await fetch(`${API_BASE}/users`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        const detail = data.detail || 'Registration failed';
-        setError(detail);
-      } else {
-        // Registration successful, auto-login the user
-        try {
-          const bodyData = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-          const loginRes = await fetch(`${API_BASE}/auth/token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: bodyData
-          });
-          if (loginRes.ok) {
-            const loginData = await loginRes.json();
-            const token = loginData.access_token;
-            onRegisterSuccess(token);
-          } else {
-            // If login immediately after registration fails
-            onRegisterSuccess(null);
-          }
-        } catch {
+      setLoading(true);
+      // Register new user via apiJson to capture backend validation messages
+      try {
+        await apiJson('/users/', null, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+      } catch (err) {
+        // show backend validation errors
+        setError(err && err.message ? err.message : 'Registration failed');
+        setLoading(false);
+        return;
+      }
+      // Registration successful, auto-login the user
+      try {
+        const bodyData = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+        const loginRes = await fetch(`${API_BASE}/auth/token`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: bodyData
+        });
+        if (loginRes.ok) {
+          const loginData = await loginRes.json();
+          const token = loginData.access_token;
+          onRegisterSuccess(token);
+        } else {
           onRegisterSuccess(null);
         }
+      } catch (e) {
+        onRegisterSuccess(null);
+      } finally {
+        setLoading(false);
       }
     } catch (err) {
       console.error('Registration error:', err);
       setError('Network error. Please try again.');
+      setLoading(false);
     }
   };
 
@@ -69,10 +85,13 @@ export default function RegisterScreen({ onRegisterSuccess, onSwitchToLogin }) {
         onChangeText={setPassword}
       />
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <Button title="Sign Up" onPress={handleRegister} />
+      <View style={styles.registerRow}>
+        <PrimaryButton title="Sign Up" onPress={handleRegister} disabled={loading} />
+        {loading ? <LoadingIndicator size="small" text="Creating account…" /> : null}
+      </View>
       <View style={styles.switchContainer}>
         <Text>Already have an account?</Text>
-        <Button title="Log In" onPress={onSwitchToLogin} />
+        <PrimaryButton title="Log In" onPress={onSwitchToLogin} style={{ marginTop: 8, backgroundColor: '#fff' }} textStyle={{ color: '#2563EB' }} />
       </View>
     </View>
   );
