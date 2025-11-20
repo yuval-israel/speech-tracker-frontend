@@ -1,323 +1,296 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Button, StyleSheet, Platform, ActivityIndicator } from 'react-native';
-import { useAudioRecorder, RecordingPresets, AudioModule } from 'expo-audio';
-import { authFetch } from '../api';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
+import { Audio } from 'expo-av';
+import { useRoute, useNavigation } from '@react-navigation/native';
+import ScreenContainer from '../components/ScreenContainer';
+import Text from '../components/Text';
+import PrimaryButton from '../components/PrimaryButton';
+import LoadingIndicator from '../components/LoadingIndicator';
+import { API_BASE } from '../api';
+import { useAuth } from '../context/AuthContext';
+import { Colors, Spacing, Layout } from '../theme';
 
-export default function RecordScreen({ token, child, onAnalysisReady, onRecordingFinished, onCancel }) {
+export default function RecordScreen() {
+  const route = useRoute();
+  const navigation = useNavigation();
+  const { token } = useAuth();
+
+  const { childId, childName } = route.params || {};
+
+  const [recording, setRecording] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
-  const [hasRecording, setHasRecording] = useState(false);
-  const [recordedBlob, setRecordedBlob] = useState(null); // for web WAV blob
-  const [error, setError] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
-  const [recordingDuration, setRecordingDuration] = useState(0); // seconds
-
-  // Refs for media recorder (web) and polling interval
-  const mediaRecorderRef = useRef(null);
-  const mediaStreamRef = useRef(null);
-  const pollRef = useRef(null);
-  const durationRef = useRef(null);
-  const pollStartRef = useRef(null);
-
-  // Expo Audio Recorder for native platforms
-  const audioRecorder = Platform.OS !== 'web' ? useAudioRecorder(RecordingPresets.HIGH_QUALITY) : null;
+  const [recordingUri, setRecordingUri] = useState(null);
+  const [duration, setDuration] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [permissionResponse, requestPermission] = Audio.usePermissions();
 
   useEffect(() => {
-    let cancelled = false;
-    // Request microphone permission on native
-    if (Platform.OS !== 'web') {
-      AudioModule.requestRecordingPermissionsAsync().then(status => {
-        if (!status.granted && !cancelled) {
-          setError('Microphone permission is required to record.');
-        }
-      });
+    let interval;
+    if (isRecording) {
+      interval = setInterval(() => {
+        setDuration(prev => prev + 1);
+      }, 1000);
+    } else if (!isRecording && duration !== 0) {
+      clearInterval(interval);
     }
-    return () => { 
-      cancelled = true;
-      // Cleanup: stop any ongoing polling
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-      }
-      if (durationRef.current) {
-        clearInterval(durationRef.current);
-      }
-      // Stop media stream if any
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, []);
+    return () => clearInterval(interval);
+  }, [isRecording]);
 
-  const startRecording = async () => {
-    setError('');
-    setRecordingDuration(0);
-    // Start recording depending on platform
-    if (Platform.OS === 'web') {
-      try {
-        // If no existing stream, request one
-        if (!mediaStreamRef.current) {
-          mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
-        }
-        const options = { mimeType: 'audio/webm' };
-        const mr = new MediaRecorder(mediaStreamRef.current, options);
-        const chunks = [];
-        mr.ondataavailable = e => {
-          if (e.data.size > 0) {
-            chunks.push(e.data);
-          }
-        };
-        mr.onstop = async () => {
-          // Combine chunks into one blob
-          const blob = new Blob(chunks, { type: 'audio/webm' });
-          try {
-            // Decode audio data and encode as WAV
-            const arrayBuf = await blob.arrayBuffer();
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
-            const wavBuffer = encodeWav(audioBuf);
-            const wavBlob = new Blob([wavBuffer], { type: 'audio/wav' });
-            setRecordedBlob(wavBlob);
-            setHasRecording(true);
-            audioCtx.close();
-          } catch (convErr) {
-            console.error('Conversion to WAV failed:', convErr);
-            setError('Could not process audio recording.');
-          }
-        };
-        mediaRecorderRef.current = mr;
-        mr.start();
-        // start duration timer
-        if (durationRef.current) clearInterval(durationRef.current);
-        durationRef.current = setInterval(() => {
-          setRecordingDuration(d => d + 1);
-        }, 1000);
-        setIsRecording(true);
-      } catch (err) {
-        console.error('MediaRecorder start error:', err);
-        setError('Recording not supported or permission denied.');
-      }
-    } else {
-      try {
-        await audioRecorder.prepareToRecordAsync();
-        audioRecorder.record();
-        // start duration timer
-        if (durationRef.current) clearInterval(durationRef.current);
-        durationRef.current = setInterval(() => {
-          setRecordingDuration(d => d + 1);
-        }, 1000);
-        setIsRecording(true);
-      } catch (err) {
-        console.error('Error starting recording:', err);
-        setError('Could not start recording.');
-      }
-    }
-  };
-
-  const stopRecording = async () => {
-    setError('');
-    if (Platform.OS === 'web') {
-      if (mediaRecorderRef.current) {
-        mediaRecorderRef.current.stop();
-      }
-      setIsRecording(false);
-      if (durationRef.current) {
-        clearInterval(durationRef.current);
-        durationRef.current = null;
-      }
-      // hasRecording will be set in onstop event
-    } else {
-      try {
-        await audioRecorder.stop();
-        setIsRecording(false);
-        if (durationRef.current) {
-          clearInterval(durationRef.current);
-          durationRef.current = null;
-        }
-        setHasRecording(true);
-      } catch (err) {
-        console.error('Error stopping recording:', err);
-        setError('Could not stop recording properly.');
-      }
-    }
-  };
-
-  const uploadRecording = async () => {
-    setError('');
-    setIsUploading(true);
-    // set polling start time for timeout
-    pollStartRef.current = Date.now();
-    const POLL_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes
+  async function startRecording() {
     try {
-      // Prepare form data with the audio file
-      const formData = new FormData();
-      if (Platform.OS === 'web') {
-        formData.append('file', new File([recordedBlob], 'audio.wav', { type: 'audio/wav' }));
-      } else {
-        // Use recorded file URI
-        let fileUri = null;
-        try {
-          if (typeof audioRecorder.getURI === 'function') {
-            fileUri = await audioRecorder.getURI();
-          }
-        } catch (e) {
-          // ignore
-        }
-        fileUri = fileUri || audioRecorder.audioRecorder?.uri || audioRecorder.uri;
-        formData.append('file', { uri: fileUri, name: 'audio.wav', type: 'audio/wav' });
+      if (permissionResponse.status !== 'granted') {
+        console.log('Requesting permission..');
+        await requestPermission();
       }
-      const res = await authFetch(`/recordings?child_id=${child.id}`, token, {
-        method: 'POST',
-        body: formData
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
       });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        const detail = data.detail || 'Upload failed';
-        throw new Error(detail);
-      }
-      const recordingData = await res.json();
-      const recId = recordingData.id;
-      // Poll for analysis completion
-      pollRef.current = setInterval(async () => {
-        try {
-          const statusRes = await authFetch(`/recordings/by-id/${recId}`, token);
-          if (!statusRes.ok) {
-            throw new Error('Status check failed');
-          }
-          const rec = await statusRes.json();
-          // timeout check
-          if (pollStartRef.current && Date.now() - pollStartRef.current > POLL_TIMEOUT_MS) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-            setIsUploading(false);
-            setError('Analysis timed out. Please try again later.');
-            return;
-          }
 
-          if (rec.status === 'ready') {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-            setIsUploading(false);
-            // Prefer the newer prop name `onRecordingFinished`, but fall back to
-            // `onAnalysisReady` for backward compatibility.
-            if (typeof onRecordingFinished === 'function') {
-              onRecordingFinished(recId);
-            } else if (typeof onAnalysisReady === 'function') {
-              onAnalysisReady(recId);
-            }
-          } else if (rec.status === 'failed') {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-            setIsUploading(false);
-            setError('Analysis failed. Please try recording again.');
-          }
-        } catch (err) {
-          console.error('Error polling status:', err);
-          // If polling fails due to network, keep trying until timeout (not implemented here)
-        }
-      }, 3000);
+      console.log('Starting recording..');
+      const { recording } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      setRecording(recording);
+      setIsRecording(true);
+      setDuration(0);
+      setUploadError('');
+      console.log('Recording started');
     } catch (err) {
-      console.error('Upload error:', err);
-      setError(err.message || 'Upload failed.');
-      setIsUploading(false);
+      console.error('Failed to start recording', err);
+      setUploadError('Failed to start recording. Please try again.');
     }
-  };
-
-  // Helper to encode AudioBuffer to WAV format (16-bit PCM)
-  function encodeWav(audioBuf) {
-    const numChannels = audioBuf.numberOfChannels;
-    const sampleRate = audioBuf.sampleRate;
-    const samples = audioBuf.getChannelData(0).length;
-    const bytesPerSample = 2;
-    const blockAlign = numChannels * bytesPerSample;
-    const byteRate = sampleRate * blockAlign;
-    const dataSize = samples * blockAlign;
-    const buffer = new ArrayBuffer(44 + dataSize);
-    const view = new DataView(buffer);
-    // Write WAV header
-    const writeString = (offset, str) => {
-      for (let i = 0; i < str.length; ++i) {
-        view.setUint8(offset + i, str.charCodeAt(i));
-      }
-    };
-    writeString(0, 'RIFF');
-    view.setUint32(4, 36 + dataSize, true);
-    writeString(8, 'WAVE');
-    writeString(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true); // PCM format
-    view.setUint16(22, numChannels, true);
-    view.setUint32(24, sampleRate, true);
-    view.setUint32(28, byteRate, true);
-    view.setUint16(32, blockAlign, true);
-    view.setUint16(34, 16, true); // bits per sample
-    writeString(36, 'data');
-    view.setUint32(40, dataSize, true);
-    // Write interleaved PCM samples
-    let offset = 44;
-    for (let i = 0; i < samples; i++) {
-      for (let ch = 0; ch < numChannels; ch++) {
-        let sample = audioBuf.getChannelData(ch)[i];
-        // Clamp and convert to int16
-        sample = Math.max(-1, Math.min(1, sample));
-        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
-        offset += 2;
-      }
-    }
-    return buffer;
   }
 
+  async function stopRecording() {
+    console.log('Stopping recording..');
+    setIsRecording(false);
+    await recording.stopAndUnloadAsync();
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: false,
+    });
+    const uri = recording.getURI();
+    setRecordingUri(uri);
+    console.log('Recording stopped and stored at', uri);
+    setRecording(null);
+  }
+
+  async function uploadRecording() {
+    if (!recordingUri) {
+      setUploadError('No recording to upload');
+      return;
+    }
+
+    if (!childId) {
+      setUploadError('Child ID is missing');
+      return;
+    }
+
+    setUploading(true);
+    setUploadError('');
+
+    try {
+      const formData = new FormData();
+
+      // Create file object for upload
+      const filename = `recording_${Date.now()}.wav`;
+      const fileToUpload = {
+        uri: recordingUri,
+        type: 'audio/wav',
+        name: filename,
+      };
+
+      formData.append('file', fileToUpload);
+
+      const response = await fetch(`${API_BASE}/recordings/?child_id=${childId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Upload failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Upload successful:', data);
+
+      Alert.alert(
+        'Success',
+        'Recording uploaded successfully! Processing will begin shortly.',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ]
+      );
+    } catch (err) {
+      console.error('Upload error:', err);
+      setUploadError(err.message || 'Failed to upload recording. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function discardRecording() {
+    setRecordingUri(null);
+    setDuration(0);
+  }
+
+  const formatDuration = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+  };
+
   return (
-    <View style={styles.container}>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      {!isUploading && (
-        <>
-          {!isRecording && !hasRecording && (
-            <Button title="Start Recording" onPress={startRecording} />
-          )}
-          {isRecording && (
-            <Button title="Stop Recording" onPress={stopRecording} />
-          )}
-          {!isRecording && hasRecording && (
-            <>
-              <Button title="Analyze Recording" onPress={uploadRecording} />
-              <Button title="Record Again" color="#555" onPress={() => {
-                setHasRecording(false);
-                setRecordedBlob(null);
-                setError('');
-                setRecordingDuration(0);
-              }} />
-            </>
-          )}
-        </>
-      )}
-      {isUploading && (
-        <View style={{ alignItems: 'center', marginVertical: 16 }}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.processing}>Processing recording, please wait...</Text>
+    <ScreenContainer>
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <Text color={Colors.primary}>← Back</Text>
+          </TouchableOpacity>
         </View>
-      )}
-      {(isRecording || recordingDuration > 0) && (
-        <Text style={styles.duration}>Duration: {Math.floor(recordingDuration / 60)}:{String(recordingDuration % 60).padStart(2, '0')}</Text>
-      )}
-      <Button title="Cancel" color="#555" onPress={onCancel} disabled={isRecording || isUploading} />
-    </View>
+
+        <Text variant="h1" align="center">Record Session</Text>
+        {childName && (
+          <Text variant="body" align="center" color={Colors.textLight} style={styles.childName}>
+            {childName}
+          </Text>
+        )}
+
+        <View style={styles.timerContainer}>
+          <Text style={styles.timerText}>{formatDuration(duration)}</Text>
+        </View>
+
+        {uploadError ? (
+          <Text style={styles.errorText}>{uploadError}</Text>
+        ) : null}
+
+        {uploading ? (
+          <LoadingIndicator text="Uploading recording..." />
+        ) : recordingUri ? (
+          <View style={styles.controls}>
+            <Text align="center" style={styles.readyText}>
+              Recording ready to upload
+            </Text>
+            <View style={styles.buttonGroup}>
+              <PrimaryButton
+                title="Upload"
+                onPress={uploadRecording}
+                style={styles.uploadButton}
+              />
+              <TouchableOpacity onPress={discardRecording} style={styles.discardButton}>
+                <Text color={Colors.danger}>Discard</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : (
+          <View style={styles.controls}>
+            <TouchableOpacity
+              style={[styles.recordButton, isRecording && styles.recordingActive]}
+              onPress={isRecording ? stopRecording : startRecording}
+            >
+              <View style={[styles.innerRecordButton, isRecording && styles.innerRecordingActive]} />
+            </TouchableOpacity>
+            <Text style={styles.statusText}>
+              {isRecording ? 'Recording...' : 'Tap to Record'}
+            </Text>
+          </View>
+        )}
+      </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 24,
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF'
+    paddingHorizontal: Spacing.md,
   },
-  error: {
-    color: 'red',
-    marginBottom: 16,
-    textAlign: 'center'
+  header: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: Spacing.md,
   },
-  processing: {
+  backButton: {
+    padding: Spacing.sm,
+  },
+  childName: {
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  timerContainer: {
+    marginVertical: Spacing.xxl,
+    alignItems: 'center',
+  },
+  timerText: {
+    fontSize: 64,
+    fontWeight: '200',
+    fontVariant: ['tabular-nums'],
+    color: Colors.text,
+  },
+  controls: {
+    alignItems: 'center',
+  },
+  recordButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 4,
+    borderColor: Colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  recordingActive: {
+    borderColor: Colors.danger,
+  },
+  innerRecordButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: Colors.primary,
+  },
+  innerRecordingActive: {
+    width: 30,
+    height: 30,
+    borderRadius: 4,
+    backgroundColor: Colors.danger,
+  },
+  statusText: {
+    color: Colors.textLight,
+    fontSize: 16,
+  },
+  readyText: {
+    fontSize: 18,
+    marginBottom: Spacing.lg,
+    color: Colors.success,
+    fontWeight: '500',
+  },
+  buttonGroup: {
+    width: '100%',
+    gap: Spacing.md,
+  },
+  uploadButton: {
+    marginBottom: Spacing.sm,
+  },
+  discardButton: {
+    padding: Spacing.md,
+    alignItems: 'center',
+  },
+  errorText: {
+    color: Colors.danger,
     textAlign: 'center',
-    fontStyle: 'italic',
-    marginVertical: 16
-  }
+    marginBottom: Spacing.md,
+  },
 });
