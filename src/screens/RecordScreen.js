@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
 import { Audio } from 'expo-av';
+import * as Notifications from 'expo-notifications';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
@@ -96,13 +97,25 @@ export default function RecordScreen() {
 
       // Create file object for upload
       const filename = `recording_${Date.now()}.wav`;
-      const fileToUpload = {
-        uri: recordingUri,
-        type: 'audio/wav',
-        name: filename,
-      };
 
-      formData.append('file', fileToUpload);
+      if (Platform.OS === 'web') {
+        const audioBlob = await fetch(recordingUri).then(r => r.blob());
+        const mimeType = audioBlob.type;
+        let ext = 'wav';
+        if (mimeType.includes('webm')) ext = 'webm';
+        else if (mimeType.includes('mp4')) ext = 'mp4';
+        else if (mimeType.includes('ogg')) ext = 'ogg';
+
+        const webFilename = `recording_${Date.now()}.${ext}`;
+        formData.append('file', audioBlob, webFilename);
+      } else {
+        const fileToUpload = {
+          uri: recordingUri,
+          type: 'audio/wav',
+          name: filename, // Native usually records as wav/caf, keeping .wav for now
+        };
+        formData.append('file', fileToUpload);
+      }
 
       const response = await fetch(`${API_BASE}/recordings/?child_id=${childId}`, {
         method: 'POST',
@@ -114,22 +127,29 @@ export default function RecordScreen() {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.detail || `Upload failed with status ${response.status}`);
+        let errorMessage = errorData.detail || `Upload failed with status ${response.status}`;
+        if (typeof errorMessage === 'object') {
+          errorMessage = JSON.stringify(errorMessage);
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
       console.log('Upload successful:', data);
 
-      Alert.alert(
-        'Success',
-        'Recording uploaded successfully! Processing will begin shortly.',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
+      try {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "Upload Success",
+            body: "Your recording has been uploaded successfully!",
           },
-        ]
-      );
+          trigger: null,
+        });
+      } catch (err) {
+        console.log('Failed to schedule notification', err);
+      }
+
+      navigation.navigate('Home');
     } catch (err) {
       console.error('Upload error:', err);
       setUploadError(err.message || 'Failed to upload recording. Please try again.');

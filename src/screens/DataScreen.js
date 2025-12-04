@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Rect, Text as SvgText } from 'react-native-svg';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
@@ -94,12 +95,30 @@ export default function DataScreen() {
             if (!token || !selectedChild) return;
             setLoading(true);
             setError('');
+            const cacheKey = `ANALYSIS_CACHE_${selectedChild.id}`;
+
             try {
-                const result = await apiJson(`/analysis/children/${selectedChild.id}`, token);
+                // Fetch from global_child_summed.json endpoint
+                const result = await apiJson(`/global_child_summed.json?child_id=${selectedChild.id}`, token);
                 setData(result);
+                // Cache the result
+                await AsyncStorage.setItem(cacheKey, JSON.stringify(result));
             } catch (err) {
                 console.error('Failed to load analysis dashboard', err);
-                setError(err.message || 'Failed to load analysis.');
+
+                // Try to load from cache
+                try {
+                    const cached = await AsyncStorage.getItem(cacheKey);
+                    if (cached) {
+                        setData(JSON.parse(cached));
+                        // Optional: Set a specific error or info message that we are offline
+                        // setError('Showing offline data'); 
+                    } else {
+                        setError(err.message || 'Failed to load analysis.');
+                    }
+                } catch (cacheErr) {
+                    setError(err.message || 'Failed to load analysis.');
+                }
             } finally {
                 setLoading(false);
             }
