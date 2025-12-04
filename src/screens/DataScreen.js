@@ -1,73 +1,117 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, ScrollView, Dimensions } from 'react-native';
 import Svg, { Rect, Text as SvgText } from 'react-native-svg';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
 import { Colors, Spacing, Layout } from '../theme';
+import { apiJson } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 const screenWidth = Dimensions.get('window').width;
 
-const DATA = [
-    { day: 'Mon', count: 12 },
-    { day: 'Tue', count: 19 },
-    { day: 'Wed', count: 8 },
-    { day: 'Thu', count: 24 },
-    { day: 'Fri', count: 15 },
-    { day: 'Sat', count: 30 },
-    { day: 'Sun', count: 20 },
-];
+const RADIUS = 70;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-const Chart = () => {
-    const maxCount = Math.max(...DATA.map(d => d.count));
-    const barWidth = 30;
-    const chartHeight = 200;
-    const spacing = (screenWidth - (Layout.SECTION_PADDING * 2) - (barWidth * DATA.length)) / (DATA.length - 1);
+const LanguageUnitsRing = ({ percent }) => {
+    const clamped = Math.max(0, Math.min(100, percent || 0));
+    const strokeDashoffset = CIRCUMFERENCE - (CIRCUMFERENCE * clamped) / 100;
 
     return (
-        <View style={styles.chartContainer}>
-            <Svg height={chartHeight + 40} width={screenWidth - (Layout.SECTION_PADDING * 2)}>
-                {DATA.map((item, index) => {
-                    const barHeight = (item.count / maxCount) * chartHeight;
-                    const x = index * (barWidth + spacing);
-                    const y = chartHeight - barHeight;
-
-                    return (
-                        <React.Fragment key={index}>
-                            <Rect
-                                x={x}
-                                y={y}
-                                width={barWidth}
-                                height={barHeight}
-                                fill={Colors.primary}
-                                rx={4}
-                            />
-                            <SvgText
-                                x={x + barWidth / 2}
-                                y={chartHeight + 20}
-                                fontSize="12"
-                                fill={Colors.textLight}
-                                textAnchor="middle"
-                            >
-                                {item.day}
-                            </SvgText>
-                            <SvgText
-                                x={x + barWidth / 2}
-                                y={y - 5}
-                                fontSize="10"
-                                fill={Colors.text}
-                                textAnchor="middle"
-                            >
-                                {item.count}
-                            </SvgText>
-                        </React.Fragment>
-                    );
-                })}
+        <View style={styles.ringContainer}>
+            <Svg height={RADIUS * 2 + 20} width={RADIUS * 2 + 20}>
+                <Rect
+                    x={0}
+                    y={0}
+                    width={RADIUS * 2 + 20}
+                    height={RADIUS * 2 + 20}
+                    fill="transparent"
+                />
+                {/* Background circle */}
+                <SvgText
+                    x="50%"
+                    y="50%"
+                    fontSize="32"
+                    fill={Colors.text}
+                    textAnchor="middle"
+                    alignmentBaseline="central"
+                >
+                    {`${clamped}%`}
+                </SvgText>
             </Svg>
         </View>
     );
 };
 
+const VocabularyBars = ({ vocabulary }) => {
+    const entries = vocabulary || [];
+    if (!entries.length) return <Text variant="small" color={Colors.textLight}>No vocabulary data yet.</Text>;
+
+    const maxValue = Math.max(...entries.map(e => e.value || 0), 1);
+
+    return (
+        <View style={{ gap: Spacing.sm }}>
+            {entries.map((item) => {
+                const width = (item.value / maxValue) * (screenWidth - Spacing.xl * 2);
+                return (
+                    <View key={item.label} style={styles.vocabRow}>
+                        <Text style={styles.vocabLabel}>{item.label}</Text>
+                        <View style={styles.vocabBarBackground}>
+                            <View style={[styles.vocabBarFill, { width }]} />
+                        </View>
+                        <Text variant="small" color={Colors.textLight}>{item.value}</Text>
+                    </View>
+                );
+            })}
+        </View>
+    );
+};
+
+const InteractionMeter = ({ score }) => {
+    const clamped = Math.max(0, Math.min(100, score || 0));
+
+    return (
+        <View>
+            <View style={styles.meterTrack}>
+                <View style={[styles.meterFill, { width: `${clamped}%` }]} />
+            </View>
+            <View style={styles.meterLabels}>
+                <Text variant="small" color={Colors.textLight}>Calm</Text>
+                <Text variant="small" color={Colors.textLight}>Engaged</Text>
+                <Text variant="small" color={Colors.textLight}>Overloaded</Text>
+            </View>
+        </View>
+    );
+};
+
 export default function DataScreen() {
+    const { token, selectedChild } = useAuth();
+    const [data, setData] = useState(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        const fetchData = async () => {
+            if (!token || !selectedChild) return;
+            setLoading(true);
+            setError('');
+            try {
+                const result = await apiJson(`/analysis/children/${selectedChild.id}`, token);
+                setData(result);
+            } catch (err) {
+                console.error('Failed to load analysis dashboard', err);
+                setError(err.message || 'Failed to load analysis.');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [token, selectedChild]);
+
+    const languagePercent = data?.language_units_percent ?? 0;
+    const vocabEntries = data?.vocabulary_breakdown ?? [];
+    const interactionScore = data?.interaction_meter ?? 0;
+
     return (
         <ScreenContainer>
             <View style={styles.header}>
@@ -76,23 +120,40 @@ export default function DataScreen() {
 
             <ScrollView>
                 <View style={styles.section}>
-                    <Text variant="h3" style={{ marginBottom: Spacing.lg }}>Weekly Activity</Text>
-                    <Chart />
+                    <Text variant="h3" style={{ marginBottom: Spacing.md }}>Language Units</Text>
+                    <View style={styles.card}>
+                        <LanguageUnitsRing percent={languagePercent} />
+                        <Text variant="body" align="center" style={{ marginTop: Spacing.md }}>
+                            Daily target completion
+                        </Text>
+                    </View>
                 </View>
 
                 <View style={styles.section}>
-                    <Text variant="h3" style={{ marginBottom: Spacing.md }}>Insights</Text>
+                    <Text variant="h3" style={{ marginBottom: Spacing.md }}>Vocabulary Breakdown</Text>
                     <View style={styles.card}>
-                        <Text variant="body">
-                            Great job! You've practiced for <Text style={{ fontWeight: 'bold' }}>3 days</Text> in a row.
-                        </Text>
-                    </View>
-                    <View style={styles.card}>
-                        <Text variant="body">
-                            Most active time: <Text style={{ fontWeight: 'bold' }}>Morning (8-10 AM)</Text>
-                        </Text>
+                        <VocabularyBars vocabulary={vocabEntries} />
                     </View>
                 </View>
+
+                <View style={styles.section}>
+                    <Text variant="h3" style={{ marginBottom: Spacing.md }}>Interaction Meter</Text>
+                    <View style={styles.card}>
+                        <InteractionMeter score={interactionScore} />
+                    </View>
+                </View>
+
+                {loading && (
+                    <View style={styles.section}>
+                        <Text variant="small" color={Colors.textLight}>Loading latest data…</Text>
+                    </View>
+                )}
+
+                {error ? (
+                    <View style={styles.section}>
+                        <Text style={{ color: Colors.danger }}>{error}</Text>
+                    </View>
+                ) : null}
             </ScrollView>
         </ScreenContainer>
     );
@@ -106,10 +167,6 @@ const styles = StyleSheet.create({
     section: {
         marginBottom: Spacing.xxl,
     },
-    chartContainer: {
-        alignItems: 'center',
-        paddingVertical: Spacing.md,
-    },
     card: {
         backgroundColor: Colors.surface,
         padding: Spacing.md,
@@ -117,5 +174,47 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.sm,
         borderWidth: 1,
         borderColor: Colors.border,
-    }
+    },
+    ringContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    vocabRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: Spacing.sm,
+    },
+    vocabLabel: {
+        width: 80,
+    },
+    vocabBarBackground: {
+        flex: 1,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: Colors.background,
+        overflow: 'hidden',
+    },
+    vocabBarFill: {
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: Colors.primary,
+    },
+    meterTrack: {
+        width: '100%',
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: Colors.background,
+        overflow: 'hidden',
+        marginBottom: Spacing.sm,
+    },
+    meterFill: {
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: Colors.primary,
+    },
+    meterLabels: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+    },
 });
+

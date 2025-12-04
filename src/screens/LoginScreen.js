@@ -1,57 +1,35 @@
 import React, { useState } from 'react';
-import { View, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { API_BASE } from '../api';
 import PrimaryButton from '../components/PrimaryButton';
 import LoadingIndicator from '../components/LoadingIndicator';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
 import { useAuth } from '../context/AuthContext';
-import { Colors, Spacing, Typography } from '../theme';
+import { Colors, Spacing } from '../theme';
 
 export default function LoginScreen() {
   const navigation = useNavigation();
   const { signIn } = useAuth();
 
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [acceptTos, setAcceptTos] = useState(false);
 
-  const handleLogin = async () => {
+  const handleSocialLogin = async (provider) => {
     setError('');
-    if (!username || !password) {
-      setError('Please enter username and password.');
+    if (!acceptTos) {
+      setError('You must accept the Terms of Service to continue.');
       return;
     }
+    // Mock social login – replace with real provider integration later
     try {
       setLoading(true);
-      const bodyData = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-      const response = await fetch(`${API_BASE}/auth/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: bodyData
-      });
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        const detail = data.detail || 'Login failed';
-        setError(detail);
-        setLoading(false);
-      } else {
-        const data = await response.json();
-        const token = data.access_token;
-        if (token) {
-          await signIn(token);
-        } else {
-          setError('Unexpected response from server.');
-          setLoading(false);
-        }
-      }
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      await signIn(`mock-social-token-${provider.toLowerCase()}`);
     } catch (err) {
-      console.error('Login error:', err);
-      setError('Network error. Please try again.');
+      console.error('Mock social login error:', err);
+      setError('Login failed. Please try again.');
       setLoading(false);
     }
   };
@@ -60,58 +38,44 @@ export default function LoginScreen() {
     <ScreenContainer style={styles.container}>
       <View style={styles.content}>
         <Text variant="h1" align="center" style={styles.title}>Speech Tracker</Text>
+        <Text variant="body" align="center" color={Colors.textLight} style={styles.subtitle}>
+          Track and support your child&apos;s speech in everyday life.
+        </Text>
 
-        {/* Social Login Placeholders */}
+        {/* Social Login */}
         <View style={styles.socialContainer}>
-          <TouchableOpacity style={styles.socialButton}>
-            <Text>G</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.socialButton}>
-            <Text>F</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.dividerContainer}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>OR</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        <View style={styles.form}>
-          <Text variant="label">Username</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter your username"
-            autoCapitalize="none"
-            value={username}
-            onChangeText={setUsername}
-          />
-
-          <Text variant="label">Password</Text>
-          <View style={styles.passwordContainer}>
-            <TextInput
-              style={[styles.input, styles.passwordInput]}
-              placeholder="Enter your password"
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={setPassword}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-              <Text>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
-            </TouchableOpacity>
-          </View>
-
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-
           <PrimaryButton
-            title="Log In"
-            onPress={handleLogin}
-            disabled={loading}
-            style={styles.button}
+            title="Continue with Google"
+            onPress={() => handleSocialLogin('Google')}
+            disabled={loading || !acceptTos}
+            style={styles.socialButton}
           />
-
-          {loading ? <LoadingIndicator size="small" text="Logging in…" /> : null}
+          <PrimaryButton
+            title="Continue with Apple"
+            onPress={() => handleSocialLogin('Apple')}
+            disabled={loading || !acceptTos}
+            style={styles.socialButton}
+          />
         </View>
+
+        {/* Terms of Service */}
+        <TouchableOpacity
+          style={styles.tosRow}
+          onPress={() => setAcceptTos(!acceptTos)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: acceptTos }}
+        >
+          <View style={[styles.checkbox, acceptTos && styles.checkboxChecked]}>
+            {acceptTos ? <Text color={Colors.card}>✓</Text> : null}
+          </View>
+          <Text variant="small" style={styles.tosText}>
+            I agree to the Terms of Service and Privacy Policy
+          </Text>
+        </TouchableOpacity>
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        {loading ? <LoadingIndicator size="small" text="Signing you in…" /> : null}
 
         <View style={styles.footer}>
           <Text align="center">Don't have an account?</Text>
@@ -134,32 +98,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
   },
   title: {
+    marginBottom: Spacing.sm,
+  },
+  subtitle: {
     marginBottom: Spacing.xl,
-  },
-  form: {
-    marginBottom: Spacing.xl,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: 8,
-    padding: Spacing.md,
-    fontSize: 16,
-    marginBottom: Spacing.md,
-    backgroundColor: Colors.background,
-    textAlign: 'left',
-  },
-  passwordContainer: {
-    position: 'relative',
-  },
-  passwordInput: {
-    paddingRight: 50,
-  },
-  eyeIcon: {
-    position: 'absolute',
-    right: Spacing.md,
-    top: 12,
-    zIndex: 1,
   },
   dividerContainer: {
     flexDirection: 'row',
@@ -177,20 +119,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   socialContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    marginTop: Spacing.xl,
     gap: Spacing.md,
     marginBottom: Spacing.lg,
   },
   socialButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: Colors.surface,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.border,
+    width: '100%',
   },
   error: {
     color: Colors.danger,
@@ -208,5 +142,28 @@ const styles = StyleSheet.create({
   link: {
     fontWeight: '600',
     marginTop: Spacing.xs,
-  }
+  },
+  tosRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.md,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginRight: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.card,
+  },
+  checkboxChecked: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  tosText: {
+    flex: 1,
+  },
 });

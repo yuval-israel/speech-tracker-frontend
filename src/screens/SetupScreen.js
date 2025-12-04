@@ -3,7 +3,7 @@ import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
-import { Colors, Spacing, Layout, Shadows } from '../theme';
+import { Colors, Spacing, Layout } from '../theme';
 
 const SetupCard = ({ title, description, onPress, isCompleted }) => (
     <TouchableOpacity style={styles.card} onPress={onPress}>
@@ -46,15 +46,8 @@ export default function SetupScreen() {
                 <SetupCard
                     title="Define Voices"
                     description="Help us recognize who is speaking during sessions."
-                    onPress={() => { }} // TODO: Navigate to Voice Definition
+                    onPress={() => navigation.navigate('VoiceCalibration')}
                     isCompleted={hasDefinedVoice}
-                />
-
-                <SetupCard
-                    title="Upgrade to Pro"
-                    description="Unlock advanced analytics and unlimited recordings."
-                    onPress={() => navigation.navigate('Paywall')}
-                    isCompleted={false}
                 />
             </View>
 
@@ -84,10 +77,9 @@ const styles = StyleSheet.create({
     card: {
         backgroundColor: Colors.surface,
         padding: Spacing.lg,
-        borderRadius: Layout.borderRadius.lg,
+        borderRadius: Layout.borderRadius ? Layout.borderRadius.lg : 16,
         flexDirection: 'row',
         alignItems: 'center',
-        ...Shadows.small,
     },
     cardContent: {
         flex: 1,

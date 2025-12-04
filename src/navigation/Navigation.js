@@ -18,8 +18,7 @@ import RecordScreen from '../screens/RecordScreen';
 import AlertsScreen from '../screens/AlertsScreen';
 import DataScreen from '../screens/DataScreen';
 import ExercisesScreen from '../screens/ExercisesScreen';
-
-import PaywallScreen from '../screens/PaywallScreen';
+import VoiceCalibrationScreen from '../screens/VoiceCalibrationScreen';
 
 // Placeholder for missing screens
 const PlaceholderScreen = ({ route }) => (
@@ -49,7 +48,7 @@ const OnboardingNavigator = () => (
         <OnboardingStack.Screen name="IntroCarousel" component={OnboardingScreen} />
         <OnboardingStack.Screen name="Setup" component={SetupScreen} />
         <OnboardingStack.Screen name="AddChild" component={AddChildScreen} />
-        <OnboardingStack.Screen name="Paywall" component={PaywallScreen} options={{ presentation: 'modal' }} />
+        <OnboardingStack.Screen name="VoiceCalibration" component={VoiceCalibrationScreen} />
     </OnboardingStack.Navigator>
 );
 
@@ -81,11 +80,26 @@ const MainNavigator = () => (
             }
         }}
     >
-        <Tab.Screen name="Home" component={ExercisesScreen} options={{ title: 'Exercises' }} />
-        <Tab.Screen name="MyFamily" component={FamilyNavigator} options={{ title: 'My Family' }} />
-        <Tab.Screen name="Record" component={RecordScreen} />
-        <Tab.Screen name="Alerts" component={AlertsScreen} />
-        <Tab.Screen name="Data" component={DataScreen} />
+        <Tab.Screen name="Home" component={ExercisesScreen} options={{ 
+            title: 'Home',
+            tabBarLabel: 'Home',
+        }} />
+        <Tab.Screen name="Record" component={RecordScreen} options={{
+            title: 'Record',
+            tabBarLabel: 'Record',
+        }} />
+        <Tab.Screen name="Data" component={DataScreen} options={{
+            title: 'Data',
+            tabBarLabel: 'Data',
+        }} />
+        <Tab.Screen name="Alerts" component={AlertsScreen} options={{
+            title: 'Alerts',
+            tabBarLabel: 'Alerts',
+        }} />
+        <Tab.Screen name="MyFamily" component={FamilyNavigator} options={{ 
+            title: 'My Family',
+            tabBarLabel: 'Family',
+        }} />
     </Tab.Navigator>
 );
 
@@ -93,7 +107,6 @@ const MainNavigator = () => (
 const AppNavigator = () => (
     <AppStack.Navigator screenOptions={{ headerShown: false }}>
         <AppStack.Screen name="MainTabs" component={MainNavigator} />
-        <AppStack.Screen name="Paywall" component={PaywallScreen} options={{ presentation: 'modal' }} />
     </AppStack.Navigator>
 );
 
