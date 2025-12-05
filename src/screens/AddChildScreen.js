@@ -1,133 +1,217 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, TextInput, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { apiJson } from '../api';
+import ScreenContainer from '../components/ScreenContainer';
+import Text from '../components/Text';
+import PrimaryButton from '../components/PrimaryButton';
+import LoadingIndicator from '../components/LoadingIndicator';
+import { useAuth } from '../context/AuthContext';
+import { Colors, Spacing, Layout } from '../theme';
 
-export default function AddChildScreen({ token, onChildAdded, onCancel }) {
+export default function AddChildScreen() {
+  const navigation = useNavigation();
+  const { token } = useAuth();
+
   const [name, setName] = useState('');
-  const [birthdate, setBirthdate] = useState('');  // expected format YYYY-MM-DD
-  const [gender, setGender] = useState('male');
-  const [error, setError] = useState('');
+  const [birthDate, setBirthDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [gender, setGender] = useState('boy'); // 'boy' or 'girl'
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleAddChild = async () => {
+  const handleDateChange = (event, selectedDate) => {
+    const currentDate = selectedDate || birthDate;
+    setShowDatePicker(Platform.OS === 'ios');
+    setBirthDate(currentDate);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      setError('Please enter a name.');
+      return;
+    }
+
+    setLoading(true);
     setError('');
-    if (!name || !birthdate || !gender) {
-      setError('All fields are required.');
-      return;
-    }
-    // simple YYYY-MM-DD validation
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthdate)) {
-      setError('Birthdate must be in YYYY-MM-DD format.');
-      return;
-    }
+
     try {
-      setLoading(true);
-      const data = await apiJson('/children', token, {
+      const formattedDate = birthDate.toISOString().split('T')[0];
+
+      await apiJson('/children/', token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, birthdate, gender: gender.toLowerCase() })
+        body: JSON.stringify({
+          name: name.trim(),
+          birthdate: formattedDate,  // Fixed: was birth_date
+          gender: gender === 'boy' ? 'male' : 'female'  // Fixed: map to enum values
+        })
       });
-      onChildAdded(data);
+
+      // Success - go back to list
+      navigation.goBack();
     } catch (err) {
       console.error('Error adding child:', err);
-      if (err && err.status === 401) {
-        setError('Session expired. Please log in again.');
-      } else if (err && err.message) {
-        setError(err.message);
-      } else {
-        setError('Network error. Please try again.');
+      // Handle array of validation errors from backend
+      let errorMsg = err.message || 'Failed to add child.';
+      if (err.data && Array.isArray(err.data.detail)) {
+        errorMsg = err.data.detail.map(e => e.msg || e.message || JSON.stringify(e)).join(', ');
       }
+      setError(errorMsg);
+    } finally {
       setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>Add Child Profile</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Child's Name"
-        value={name}
-        onChangeText={setName}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Birthdate (YYYY-MM-DD)"
-        value={birthdate}
-        onChangeText={setBirthdate}
-      />
-      <View style={styles.genderRow}>
-        <Text style={styles.genderLabel}>Gender: </Text>
-        <TouchableOpacity onPress={() => setGender('male')} style={[styles.genderOption, gender === 'male' && styles.genderSelected]}>
-          <Text style={styles.genderOptionText}>Male</Text>
+    <ScreenContainer>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Text color={Colors.primary}>Cancel</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setGender('female')} style={[styles.genderOption, gender === 'female' && styles.genderSelected]}>
-          <Text style={styles.genderOptionText}>Female</Text>
-        </TouchableOpacity>
+        <Text variant="h2">Add Child</Text>
+        <View style={{ width: 50 }} />
       </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <View style={styles.actionRow}>
-        <Button title="Create Profile" onPress={handleAddChild} disabled={loading} />
-        <Button title="Cancel" color="#555" onPress={onCancel} />
+
+      <View style={styles.form}>
+        <Text variant="label">Name</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Child's Name"
+          value={name}
+          onChangeText={setName}
+        />
+
+        <Text variant="label">Birth Date</Text>
+        {Platform.OS === 'web' ? (
+          <TextInput
+            style={styles.input}
+            placeholder="YYYY-MM-DD"
+            value={birthDate.toISOString().split('T')[0]}
+            onChangeText={(text) => {
+              // Parse the date from text input
+              const parsed = new Date(text);
+              if (!isNaN(parsed.getTime())) {
+                setBirthDate(parsed);
+              }
+            }}
+          />
+        ) : Platform.OS === 'android' ? (
+          <>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateButton}>
+              <Text>{birthDate.toLocaleDateString()}</Text>
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={birthDate}
+                mode="date"
+                display="default"
+                onChange={handleDateChange}
+                maximumDate={new Date()}
+              />
+            )}
+          </>
+        ) : (
+          <DateTimePicker
+            value={birthDate}
+            mode="date"
+            display="default"
+            onChange={handleDateChange}
+            maximumDate={new Date()}
+            style={styles.datePicker}
+          />
+        )}
+
+        <Text variant="label" style={{ marginTop: Spacing.md }}>Gender</Text>
+        <View style={styles.genderContainer}>
+          <TouchableOpacity
+            style={[styles.genderButton, gender === 'boy' && styles.genderActive]}
+            onPress={() => setGender('boy')}
+          >
+            <Text color={gender === 'boy' ? Colors.white : Colors.text}>Boy</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.genderButton, gender === 'girl' && styles.genderActive]}
+            onPress={() => setGender('girl')}
+          >
+            <Text color={gender === 'girl' ? Colors.white : Colors.text}>Girl</Text>
+          </TouchableOpacity>
+        </View>
+
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+
+        <PrimaryButton
+          title="Save Profile"
+          onPress={handleSave}
+          disabled={loading}
+          style={styles.saveButton}
+        />
+
+        {loading && <LoadingIndicator text="Saving..." />}
       </View>
-    </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    paddingBottom: 40,
-    justifyContent: 'center',
-    backgroundColor: '#FFFFFF'
-  },
   header: {
-    fontSize: 22,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 24
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.xl,
+  },
+  backButton: {
+    padding: Spacing.sm,
+  },
+  form: {
+    flex: 1,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#888',
-    borderRadius: 4,
-    padding: 12,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: Spacing.md,
     fontSize: 16,
-    marginBottom: 16
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.background,
+    textAlign: 'left',
   },
-  genderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16
-  },
-  genderLabel: {
-    fontSize: 16,
-    marginRight: 8
-  },
-  genderOption: {
+  dateButton: {
     borderWidth: 1,
-    borderColor: '#888',
-    borderRadius: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    marginRight: 8
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.background,
   },
-  genderOptionText: {
-    fontSize: 16
+  datePicker: {
+    alignSelf: 'flex-start',
+    marginBottom: Spacing.md,
   },
-  genderSelected: {
-    backgroundColor: '#DDDDDD'
+  genderContainer: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  genderButton: {
+    flex: 1,
+    padding: Spacing.md,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+  },
+  genderActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   error: {
-    color: 'red',
-    marginBottom: 16,
+    color: Colors.danger,
+    marginBottom: Spacing.md,
     textAlign: 'center'
-  }
-  ,
-  actionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12
+  },
+  saveButton: {
+    marginTop: Spacing.lg,
   }
 });

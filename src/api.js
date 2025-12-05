@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 
 export const API_BASE = Platform.OS === 'android'
   ? 'http://10.0.2.2:8000'
@@ -12,6 +13,11 @@ export const API_BASE = Platform.OS === 'android'
  * @returns {Promise<Response>} The fetch response promise.
  */
 export async function authFetch(path, token, options = {}) {
+  const netInfo = await NetInfo.fetch();
+  if (!netInfo.isConnected) {
+    throw new Error('No internet connection. Please check your network.');
+  }
+
   const url = API_BASE + path;
   const headers = options.headers ? { ...options.headers } : {};
   if (token) {

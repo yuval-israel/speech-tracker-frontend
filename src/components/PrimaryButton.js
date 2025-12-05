@@ -1,12 +1,19 @@
 import React from 'react';
 import { TouchableOpacity, Text, StyleSheet } from 'react-native';
-import { Colors, Spacing, Typography } from '../theme';
+import { Spacing, useTheme } from '../theme';
 
 export default function PrimaryButton({ title, onPress, disabled, style, textStyle, accessibilityLabel }) {
+  const { colors } = useTheme();
+
   return (
     <TouchableOpacity
       accessibilityLabel={accessibilityLabel || title}
-      style={[styles.button, disabled ? styles.disabled : null, style]}
+      style={[
+        styles.button,
+        { backgroundColor: colors.primary },
+        disabled && { backgroundColor: colors.muted },
+        style
+      ]}
       onPress={onPress}
       disabled={disabled}
     >
@@ -17,7 +24,6 @@ export default function PrimaryButton({ title, onPress, disabled, style, textSty
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: Colors.primary,
     paddingVertical: Spacing.sm + 6,
     paddingHorizontal: Spacing.md,
     borderRadius: 8,
@@ -27,10 +33,7 @@ const styles = StyleSheet.create({
   },
   text: {
     color: '#fff',
-    fontSize: Typography.body,
+    fontSize: 16,
     fontWeight: '600'
-  },
-  disabled: {
-    backgroundColor: '#93C5FD'
   }
 });

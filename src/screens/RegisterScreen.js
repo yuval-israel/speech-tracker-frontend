@@ -1,12 +1,21 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import { View, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { API_BASE, apiJson } from '../api';
 import PrimaryButton from '../components/PrimaryButton';
 import LoadingIndicator from '../components/LoadingIndicator';
+import ScreenContainer from '../components/ScreenContainer';
+import Text from '../components/Text';
+import { useAuth } from '../context/AuthContext';
+import { Colors, Spacing, Typography } from '../theme';
 
-export default function RegisterScreen({ onRegisterSuccess, onSwitchToLogin }) {
+export default function RegisterScreen() {
+  const navigation = useNavigation();
+  const { signIn } = useAuth();
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -40,6 +49,7 @@ export default function RegisterScreen({ onRegisterSuccess, onSwitchToLogin }) {
         setLoading(false);
         return;
       }
+
       // Registration successful, auto-login the user
       try {
         const bodyData = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
@@ -48,15 +58,17 @@ export default function RegisterScreen({ onRegisterSuccess, onSwitchToLogin }) {
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: bodyData
         });
+
         if (loginRes.ok) {
           const loginData = await loginRes.json();
           const token = loginData.access_token;
-          onRegisterSuccess(token);
+          await signIn(token);
         } else {
-          onRegisterSuccess(null);
+          // If auto-login fails, redirect to login
+          navigation.navigate('Login');
         }
       } catch (e) {
-        onRegisterSuccess(null);
+        navigation.navigate('Login');
       } finally {
         setLoading(false);
       }
@@ -68,63 +80,109 @@ export default function RegisterScreen({ onRegisterSuccess, onSwitchToLogin }) {
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Create Account</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Choose a username"
-        autoCapitalize="none"
-        value={username}
-        onChangeText={setUsername}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Choose a password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <View style={styles.registerRow}>
-        <PrimaryButton title="Sign Up" onPress={handleRegister} disabled={loading} />
-        {loading ? <LoadingIndicator size="small" text="Creating account…" /> : null}
+    <ScreenContainer style={styles.container}>
+      <View style={styles.content}>
+        <Text variant="h1" align="center" style={styles.title}>Create Account</Text>
+
+        <View style={styles.form}>
+          <Text variant="label">Username</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Choose a username"
+            autoCapitalize="none"
+            value={username}
+            onChangeText={setUsername}
+          />
+
+          <Text variant="label">Password</Text>
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={[styles.input, styles.passwordInput]}
+              placeholder="Choose a password"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+              <Text>{showPassword ? '👁️' : '👁️‍🗨️'}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <PrimaryButton
+            title="Sign Up"
+            onPress={handleRegister}
+            disabled={loading}
+            style={styles.button}
+          />
+
+          {loading ? <LoadingIndicator size="small" text="Creating account…" /> : null}
+        </View>
+
+        <View style={styles.footer}>
+          <Text align="center">Already have an account?</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+            <Text color={Colors.primary} align="center" style={styles.link}>Log In</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={styles.switchContainer}>
-        <Text>Already have an account?</Text>
-        <PrimaryButton title="Log In" onPress={onSwitchToLogin} style={{ marginTop: 8, backgroundColor: '#fff' }} textStyle={{ color: '#2563EB' }} />
-      </View>
-    </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    padding: 24,
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF'
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 32
+    marginBottom: Spacing.xl,
+  },
+  form: {
+    marginBottom: Spacing.xl,
   },
   input: {
     borderWidth: 1,
-    borderColor: '#888',
-    borderRadius: 4,
-    padding: 12,
+    borderColor: Colors.border,
+    borderRadius: 8,
+    padding: Spacing.md,
     fontSize: 16,
-    marginBottom: 16
+    marginBottom: Spacing.md,
+    backgroundColor: Colors.background,
+    textAlign: 'left',
+  },
+  passwordContainer: {
+    position: 'relative',
+  },
+  passwordInput: {
+    paddingRight: 50,
+  },
+  eyeIcon: {
+    position: 'absolute',
+    right: Spacing.md,
+    top: 12,
+    zIndex: 1,
   },
   error: {
-    color: 'red',
-    marginBottom: 16,
+    color: Colors.danger,
+    marginBottom: Spacing.md,
     textAlign: 'center'
   },
-  switchContainer: {
-    marginTop: 16,
-    alignItems: 'center'
+  button: {
+    marginTop: Spacing.sm,
+  },
+  footer: {
+    marginTop: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  link: {
+    fontWeight: '600',
+    marginTop: Spacing.xs,
   }
 });

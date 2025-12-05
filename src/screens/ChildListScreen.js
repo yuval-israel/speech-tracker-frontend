@@ -1,13 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Button, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { apiJson } from '../api';
+import ScreenContainer from '../components/ScreenContainer';
+import Text from '../components/Text';
+import PrimaryButton from '../components/PrimaryButton';
+import { useAuth } from '../context/AuthContext';
+import { Spacing, useTheme } from '../theme';
+import { calculateAge } from '../utils/dateUtils';
 
-export default function ChildListScreen({ token, onChildSelected, onAddChild, onLogout }) {
+export default function ChildListScreen() {
+  const navigation = useNavigation();
+  const { token, signOut, setSelectedChild } = useAuth();
+  const { colors } = useTheme();
+
   const [children, setChildren] = useState([]);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const fetchChildren = async () => {
+  const fetchChildren = useCallback(async () => {
+    if (!token) return;
     setError('');
     setLoading(true);
     try {
@@ -16,9 +28,7 @@ export default function ChildListScreen({ token, onChildSelected, onAddChild, on
     } catch (err) {
       console.error('Error fetching children:', err);
       if (err && err.status === 401) {
-        // apiJson will have triggered onUnauthorized already; show brief message
-        setError('Session expired. Please log in again.');
-        if (onLogout) onLogout();
+        setError('Session expired.');
       } else if (err && err.message) {
         setError(err.message);
       } else {
@@ -27,84 +37,120 @@ export default function ChildListScreen({ token, onChildSelected, onAddChild, on
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    let isMounted = true;
-    if (isMounted) fetchChildren();
-    return () => { isMounted = false; };
   }, [token]);
 
+  useFocusEffect(
+    useCallback(() => {
+      fetchChildren();
+    }, [fetchChildren])
+  );
+
+  const onChildSelected = (child) => {
+    setSelectedChild(child); // Update global context
+    // If we came from a specific flow, we might want to go back, but for now specific navigation to detail is fine
+    // or navigation.goBack() if we treat this as a picker?
+    // Let's stick to navigating to detail, but now the "current" child is set.
+    navigation.navigate('ChildDetail', { childId: child.id, name: child.name });
+  };
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>My Children</Text>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <ScrollView style={styles.list} refreshControl={null}>
-        {loading ? <Text style={styles.loading}>Loading...</Text> : null}
+    <ScreenContainer>
+      <View style={styles.header}>
+        <Text variant="h1" align="center">My Children</Text>
+      </View>
+
+      {error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
+
+      <ScrollView
+        style={styles.list}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={fetchChildren} />
+        }
+      >
         {children.map(child => (
           <TouchableOpacity
             key={child.id}
-            style={styles.childItem}
+            style={[styles.childItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => onChildSelected(child)}
           >
-            <Text style={styles.childName}>{child.name}</Text>
+            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary }]}>
+              <Text style={styles.avatarText}>{child.name.charAt(0)}</Text>
+            </View>
+            <View style={styles.childInfo}>
+              <Text variant="h3">{child.name}</Text>
+              <Text variant="small">Age: {calculateAge(child.birthdate)}</Text>
+            </View>
           </TouchableOpacity>
         ))}
+
         {!loading && children.length === 0 && !error ? (
-          <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-            <Text style={styles.noChildren}>No child profiles found.</Text>
-            <Button title="Add first child" onPress={onAddChild} />
+          <View style={styles.emptyState}>
+            <Text style={[styles.noChildren, { color: colors.textLight }]}>No child profiles found.</Text>
+            <PrimaryButton title="Add first child" onPress={() => navigation.navigate('AddChild')} />
           </View>
         ) : null}
       </ScrollView>
-      <Button title="Refresh" onPress={fetchChildren} disabled={loading} />
-      <Button title="Add Child" onPress={onAddChild} />
-      <Button title="Log Out" color="#555" onPress={onLogout} />
-    </View>
+
+      <View style={styles.footer}>
+        <PrimaryButton title="Add Child" onPress={() => navigation.navigate('AddChild')} />
+        <TouchableOpacity onPress={signOut} style={styles.logoutButton}>
+          <Text color={colors.muted} align="center">Log Out</Text>
+        </TouchableOpacity>
+      </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    paddingBottom: 40,
-    backgroundColor: '#FFFFFF'
-  },
   header: {
-    fontSize: 22,
-    fontWeight: '600',
-    marginBottom: 16,
-    textAlign: 'center'
+    marginBottom: Spacing.lg,
+    marginTop: Spacing.md,
   },
   error: {
-    color: 'red',
-    marginBottom: 16,
+    marginBottom: Spacing.md,
     textAlign: 'center'
   },
   list: {
     flex: 1,
-    marginBottom: 16
+    marginBottom: Spacing.md
   },
   childItem: {
-    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: 12,
+    marginBottom: Spacing.sm,
     borderWidth: 1,
-    borderColor: '#CCC',
-    borderRadius: 4,
-    marginBottom: 12
   },
-  childName: {
-    fontSize: 18
+  avatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.md,
+  },
+  avatarText: {
+    color: '#FFFFFF',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  childInfo: {
+    flex: 1,
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: Spacing.xl
   },
   noChildren: {
     fontStyle: 'italic',
     textAlign: 'center',
-    marginVertical: 20
-  }
-  ,
-  loading: {
-    textAlign: 'center',
-    marginVertical: 8,
-    color: '#666'
+    marginBottom: Spacing.md,
+  },
+  footer: {
+    gap: Spacing.md,
+  },
+  logoutButton: {
+    padding: Spacing.sm,
   }
 });

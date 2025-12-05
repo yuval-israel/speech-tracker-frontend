@@ -1,119 +1,149 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
-import { API_BASE } from '../api';
+import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import PrimaryButton from '../components/PrimaryButton';
 import LoadingIndicator from '../components/LoadingIndicator';
+import ScreenContainer from '../components/ScreenContainer';
+import Text from '../components/Text';
+import { useAuth } from '../context/AuthContext';
+import { Spacing, useTheme } from '../theme';
 
-export default function LoginScreen({ onLogin, onSwitchToRegister }) {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+export default function LoginScreen() {
+  const navigation = useNavigation();
+  const { signIn } = useAuth();
+  const { colors } = useTheme();
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [acceptTos, setAcceptTos] = useState(false);
 
-  const handleLogin = async () => {
+  const handleSocialLogin = async (provider) => {
     setError('');
-    if (!username || !password) {
-      setError('Please enter username and password.');
+    if (!acceptTos) {
+      setError('You must accept the Terms of Service to continue.');
       return;
     }
     try {
       setLoading(true);
-      const bodyData = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-      const response = await fetch(`${API_BASE}/auth/token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: bodyData
-      });
-      if (!response.ok) {
-        const data = await response.json().catch(() => ({}));
-        const detail = data.detail || 'Login failed';
-        setError(detail);
-        setLoading(false);
-      } else {
-        const data = await response.json();
-        const token = data.access_token;
-        if (token) {
-          onLogin(token);
-          setLoading(false);
-        } else {
-          setError('Unexpected response from server.');
-          setLoading(false);
-        }
-      }
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      await signIn(`mock-social-token-${provider.toLowerCase()}`);
     } catch (err) {
-      console.error('Login error:', err);
-      setError('Network error. Please try again.');
+      console.error('Mock social login error:', err);
+      setError('Login failed. Please try again.');
       setLoading(false);
     }
   };
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Speech Tracker</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Username"
-        autoCapitalize="none"
-        value={username}
-        onChangeText={setUsername}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Password"
-        secureTextEntry
-        value={password}
-        onChangeText={setPassword}
-      />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
-      <View style={styles.loginRow}>
-        <PrimaryButton title="Log In" onPress={handleLogin} disabled={loading} />
-        {loading ? <LoadingIndicator size="small" text="Logging in…" /> : null}
+    <ScreenContainer style={styles.container}>
+      <View style={styles.content}>
+        <Text variant="h1" align="center" style={styles.title}>Speech Tracker</Text>
+        <Text variant="body" align="center" style={styles.subtitle}>
+          Track and support your child&apos;s speech in everyday life.
+        </Text>
+
+        <View style={styles.socialContainer}>
+          <PrimaryButton
+            title="Continue with Google"
+            onPress={() => handleSocialLogin('Google')}
+            disabled={loading || !acceptTos}
+            style={styles.socialButton}
+          />
+          <PrimaryButton
+            title="Continue with Apple"
+            onPress={() => handleSocialLogin('Apple')}
+            disabled={loading || !acceptTos}
+            style={styles.socialButton}
+          />
+        </View>
+
+        <TouchableOpacity
+          style={styles.tosRow}
+          onPress={() => setAcceptTos(!acceptTos)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: acceptTos }}
+        >
+          <View style={[
+            styles.checkbox,
+            { borderColor: colors.border, backgroundColor: colors.surface },
+            acceptTos && { backgroundColor: colors.primary, borderColor: colors.primary }
+          ]}>
+            {acceptTos ? <Text color="#FFFFFF">✓</Text> : null}
+          </View>
+          <Text variant="small" style={styles.tosText}>
+            I agree to the Terms of Service and Privacy Policy
+          </Text>
+        </TouchableOpacity>
+
+        {error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
+
+        {loading ? <LoadingIndicator size="small" text="Signing you in…" /> : null}
+
+        <View style={styles.footer}>
+          <Text align="center">Don't have an account?</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('Register')}>
+            <Text color={colors.primary} align="center" style={styles.link}>Sign Up</Text>
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={styles.switchContainer}>
-        <Text>Don't have an account?</Text>
-        <PrimaryButton title="Sign Up" onPress={onSwitchToRegister} style={{ marginTop: 8, backgroundColor: '#fff' }} textStyle={{ color: '#2563EB' }} />
-      </View>
-    </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    padding: 24,
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF'
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.md,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginBottom: 32
+    marginBottom: Spacing.sm,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#888',
-    borderRadius: 4,
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 16
+  subtitle: {
+    marginBottom: Spacing.xl,
+  },
+  socialContainer: {
+    marginTop: Spacing.xl,
+    gap: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  socialButton: {
+    width: '100%',
   },
   error: {
-    color: 'red',
-    marginBottom: 16,
+    marginBottom: Spacing.md,
     textAlign: 'center'
   },
-  switchContainer: {
-    marginTop: 16,
-    alignItems: 'center'
-  }
-  ,
-  loginRow: {
+  button: {
+    marginTop: Spacing.sm,
+  },
+  footer: {
+    marginTop: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  link: {
+    fontWeight: '600',
+    marginTop: Spacing.xs,
+  },
+  tosRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center'
+    marginTop: Spacing.md,
   },
-  loading: {
-    marginLeft: 12
-  }
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    borderWidth: 1,
+    marginRight: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tosText: {
+    flex: 1,
+  },
 });

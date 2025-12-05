@@ -1,162 +1,242 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Button, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { apiJson } from '../api';
+import ScreenContainer from '../components/ScreenContainer';
+import Text from '../components/Text';
+import PrimaryButton from '../components/PrimaryButton';
+import LoadingIndicator from '../components/LoadingIndicator';
+import { useAuth } from '../context/AuthContext';
+import { Spacing, useTheme } from '../theme';
+import { calculateAge } from '../utils/dateUtils';
 
-export default function ChildDetailScreen({ token, child, onStartRecording, onViewAnalysis, onBack }) {
+export default function ChildDetailScreen() {
+  const navigation = useNavigation();
+  const route = useRoute();
+  const { token } = useAuth();
+  const { colors } = useTheme();
+
+  const { childId, name } = route.params || {};
+
+  const [child, setChild] = useState(null);
   const [recordings, setRecordings] = useState([]);
-  const [globalAnalysis, setGlobalAnalysis] = useState(null);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const childId = child.id;
-
-  useEffect(() => {
-    let isMounted = true;
-    // Fetch child's recordings
-    const fetchRecordings = async () => {
-      try {
-        const data = await apiJson(`/children/${childId}/recordings`, token);
-        if (isMounted) setRecordings(data || []);
-      } catch (err) {
-        console.error('Error fetching recordings:', err);
-        if (isMounted) {
-          if (err && err.status === 401) {
-            setError('Session expired. Please log in again.');
-          } else if (err && err.message) {
-            setError(err.message);
-          } else {
-            setError('Error loading recordings.');
-          }
-        }
-      }
-    };
-    // Fetch global analysis summary for child
-    const fetchGlobal = async () => {
-      try {
-        const data = await apiJson(`/analysis/children/${childId}/global`, token);
-        if (isMounted) setGlobalAnalysis(data);
-      } catch (err) {
-        // If 404 or other error, treat as no global analysis available
-        if (isMounted) setGlobalAnalysis(null);
-        console.error('Error fetching global analysis (may be absent):', err);
-      }
-    };
-    fetchRecordings();
-    fetchGlobal();
-    return () => { isMounted = false; };
-  }, [token, childId]);
-
-  const formatDateTime = (dt) => {
+  const fetchData = useCallback(async (isRefresh = false) => {
+    setError('');
+    if (!isRefresh) setLoading(true);
     try {
-      const d = new Date(dt);
-      return d.toLocaleString();
-    } catch {
-      return dt;
+      // Fetch child details
+      const childData = await apiJson(`/children/${childId}`, token);
+      setChild(childData);
+
+      // Fetch recordings for this child
+      const recordingsData = await apiJson(`/recordings/${childId}`, token);
+      setRecordings(recordingsData || []);
+    } catch (err) {
+      console.error('Error fetching child details:', err);
+      if (err && err.message) {
+        setError(err.message);
+      } else {
+        setError('Failed to load child details.');
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [childId, token]);
+
+  // Refresh recordings when screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      if (childId && token) {
+        fetchData();
+      }
+    }, [fetchData])
+  );
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchData(true);
+  };
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'ready':
+        return colors.success;
+      case 'queued':
+      case 'transcribing':
+      case 'analyzing':
+        return colors.warning;
+      case 'failed':
+        return colors.danger;
+      default:
+        return colors.textLight;
     }
   };
 
+  const getStatusText = (status) => {
+    switch (status) {
+      case 'ready':
+        return 'Ready';
+      case 'queued':
+        return 'Queued';
+      case 'transcribing':
+        return 'Transcribing...';
+      case 'analyzing':
+        return 'Analyzing...';
+      case 'failed':
+        return 'Failed';
+      default:
+        return status;
+    }
+  };
+
+  const navigateToAnalysis = (recording) => {
+    if (recording.status === 'ready') {
+      navigation.navigate('Analysis', { recordingId: recording.id, child });
+    }
+  };
+
+  if (loading && !refreshing) {
+    return (
+      <ScreenContainer>
+        <LoadingIndicator text="Loading child details..." />
+      </ScreenContainer>
+    );
+  }
+
   return (
-    <View style={styles.container}>
-      <Text style={styles.header}>{child.name}'s Recordings</Text>
-      <View style={styles.subheader}>
-        {child.birthdate ? (
-          <Text style={styles.subheaderText}>DOB: {child.birthdate}</Text>
-        ) : null}
-        {globalAnalysis && (
-          <Text style={styles.subheaderText}>
-            Total Sessions: {globalAnalysis.aggregates.total_sessions}
-          </Text>
-        )}
+    <ScreenContainer>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Text color={colors.primary}>← Back</Text>
+        </TouchableOpacity>
+        <Text variant="h2">{name || child?.name}</Text>
+        <View style={{ width: 50 }} />
       </View>
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      <ScrollView style={styles.list}>
-        {recordings.length === 0 && !error ? (
-          <Text style={styles.noRecordings}>No recordings yet.</Text>
-        ) : null}
-        {recordings.map(rec => {
-          const status = rec.status || rec.state || 'unknown';
-          const ready = status === 'ready' || status === 'completed';
-          return (
+
+      {child && (
+        <View style={[styles.childInfo, { backgroundColor: colors.surface }]}>
+          <Text variant="h3">{child.name}</Text>
+          <Text variant="small">
+            Age: {calculateAge(child.birthdate)} • Gender: {child.gender}
+          </Text>
+        </View>
+      )}
+
+      <ScrollView
+        style={styles.list}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+        }
+      >
+        <Text variant="h3" style={styles.sectionTitle}>Recordings</Text>
+
+        {recordings.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.noRecordings}>No recordings yet.</Text>
+            <Text variant="small" align="center">
+              Start recording to track speech development!
+            </Text>
+          </View>
+        ) : (
+          recordings.map(recording => (
             <TouchableOpacity
-              key={rec.id}
-              style={styles.recordingItem}
+              key={recording.id}
+              style={[styles.recordingItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              onPress={() => navigateToAnalysis(recording)}
+              disabled={recording.status !== 'ready'}
             >
-              <Text style={styles.recordingText}>{formatDateTime(rec.created_at)}</Text>
-              <Text style={styles.recordingStatus}>{ready ? 'Completed' : status}</Text>
-              {ready ? (
-                <Button title="View Analysis" onPress={() => onViewAnalysis(rec.id)} />
-              ) : (
-                <Text style={styles.processingText}>Processing...</Text>
+              <View style={styles.recordingHeader}>
+                <Text variant="body" style={styles.recordingText}>
+                  Recording #{recording.id}
+                </Text>
+                <Text
+                  variant="small"
+                  style={{ color: getStatusColor(recording.status) }}
+                >
+                  {getStatusText(recording.status)}
+                </Text>
+              </View>
+              {recording.created_at && (
+                <Text variant="small">
+                  {new Date(recording.created_at).toLocaleDateString()} at{' '}
+                  {new Date(recording.created_at).toLocaleTimeString()}
+                </Text>
               )}
             </TouchableOpacity>
-          );
-        })}
+          ))
+        )}
       </ScrollView>
-      <View style={styles.actions}>
-        <Button title="New Recording" onPress={() => onStartRecording(child)} />
-      <Button title="Back to Children" color="#555" onPress={onBack} />
+
+      <View style={styles.footer}>
+        <PrimaryButton
+          title="New Recording"
+          onPress={() => navigation.navigate('Record', { childId, childName: child?.name })}
+        />
       </View>
-    </View>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    padding: 24,
-    paddingBottom: 40,
-    backgroundColor: '#FFFFFF'
-  },
   header: {
-    fontSize: 20,
-    fontWeight: '600',
-    marginBottom: 8,
-    textAlign: 'center'
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
   },
-  subheader: {
-    marginBottom: 16,
-    alignItems: 'center'
+  backButton: {
+    padding: Spacing.sm,
   },
-  subheaderText: {
-    fontSize: 14,
-    color: '#555'
+  childInfo: {
+    alignItems: 'center',
+    marginBottom: Spacing.xl,
+    padding: Spacing.md,
+    borderRadius: 12,
   },
   error: {
-    color: 'red',
-    marginBottom: 16,
-    textAlign: 'center'
+    color: '#E57373',
+    marginBottom: Spacing.md,
+    textAlign: 'center',
   },
   list: {
     flex: 1,
-    marginBottom: 16
+    marginBottom: Spacing.md,
+  },
+  sectionTitle: {
+    marginBottom: Spacing.md,
   },
   recordingItem: {
-    padding: 12,
+    padding: Spacing.md,
+    borderRadius: 8,
+    marginBottom: Spacing.sm,
     borderWidth: 1,
-    borderColor: '#CCC',
-    borderRadius: 4,
-    marginBottom: 8
+  },
+  recordingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
   },
   recordingText: {
-    fontSize: 16
+    fontWeight: '500',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: Spacing.xxl,
   },
   noRecordings: {
     fontStyle: 'italic',
     textAlign: 'center',
-    marginVertical: 20
-  }
-  ,
-  recordingStatus: {
-    fontSize: 14,
-    color: '#333',
-    marginTop: 6
+    marginBottom: Spacing.sm,
   },
-  processingText: {
-    color: '#888',
-    marginTop: 6
+  footer: {
+    gap: Spacing.md,
   },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12
-  }
 });
