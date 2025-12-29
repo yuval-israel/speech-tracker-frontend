@@ -17,7 +17,7 @@ export default function AddChildScreen() {
   const [name, setName] = useState('');
   const [birthDate, setBirthDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [gender, setGender] = useState('boy'); // 'boy' or 'girl'
+  const [gender, setGender] = useState('male'); // 'male' or 'female'
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -38,27 +38,32 @@ export default function AddChildScreen() {
 
     try {
       const formattedDate = birthDate.toISOString().split('T')[0];
+      const childPayload = {
+        name: name.trim(),
+        birth_date: formattedDate,
+        gender: gender
+      };
 
-      await apiJson('/children/', token, {
+      console.log('Sending child data:', childPayload);
+
+      const childData = await apiJson('/children/', token, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
-          birthdate: formattedDate,  // Fixed: was birth_date
-          gender: gender === 'boy' ? 'male' : 'female'  // Fixed: map to enum values
+          birth_date: formattedDate,
+          gender: gender
         })
       });
 
-      // Success - go back to list
-      navigation.goBack();
+      // CRITICAL CHANGE: Navigate to Calibration, NOT back to list
+      navigation.navigate('VoiceCalibration', {
+        childId: childData.id,
+        childName: childData.name
+      });
     } catch (err) {
       console.error('Error adding child:', err);
-      // Handle array of validation errors from backend
-      let errorMsg = err.message || 'Failed to add child.';
-      if (err.data && Array.isArray(err.data.detail)) {
-        errorMsg = err.data.detail.map(e => e.msg || e.message || JSON.stringify(e)).join(', ');
-      }
-      setError(errorMsg);
+      setError(err.message || 'Failed to add child.');
     } finally {
       setLoading(false);
     }
@@ -76,43 +81,45 @@ export default function AddChildScreen() {
 
       <View style={styles.form}>
         <Text variant="label">Name</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Child's Name"
-          value={name}
-          onChangeText={setName}
-        />
-
-        <Text variant="label">Birth Date</Text>
         {Platform.OS === 'web' ? (
+          <input
+            type="text"
+            id="childNameInput"
+            style={{
+              borderWidth: 1,
+              borderColor: '#e0e0e0',
+              borderRadius: 8,
+              padding: 12,
+              fontSize: 16,
+              marginBottom: 12,
+              backgroundColor: '#fff',
+              width: '100%',
+              boxSizing: 'border-box',
+              fontFamily: 'inherit'
+            }}
+            defaultValue={name}
+            onChange={(e) => {
+              setName(e.target.value);
+              console.log('Name updated to:', e.target.value);
+            }}
+            placeholder="Child's Name"
+          />
+        ) : (
           <TextInput
             style={styles.input}
-            placeholder="YYYY-MM-DD"
-            value={birthDate.toISOString().split('T')[0]}
-            onChangeText={(text) => {
-              // Parse the date from text input
-              const parsed = new Date(text);
-              if (!isNaN(parsed.getTime())) {
-                setBirthDate(parsed);
-              }
-            }}
+            placeholder="Child's Name"
+            value={name}
+            onChangeText={setName}
           />
-        ) : Platform.OS === 'android' ? (
-          <>
-            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateButton}>
-              <Text>{birthDate.toLocaleDateString()}</Text>
-            </TouchableOpacity>
-            {showDatePicker && (
-              <DateTimePicker
-                value={birthDate}
-                mode="date"
-                display="default"
-                onChange={handleDateChange}
-                maximumDate={new Date()}
-              />
-            )}
-          </>
-        ) : (
+        )}
+
+        <Text variant="label">Birth Date</Text>
+        {Platform.OS === 'android' && (
+          <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateButton}>
+            <Text>{birthDate.toLocaleDateString()}</Text>
+          </TouchableOpacity>
+        )}
+        {(showDatePicker || Platform.OS === 'ios') && (
           <DateTimePicker
             value={birthDate}
             mode="date"
@@ -126,16 +133,16 @@ export default function AddChildScreen() {
         <Text variant="label" style={{ marginTop: Spacing.md }}>Gender</Text>
         <View style={styles.genderContainer}>
           <TouchableOpacity
-            style={[styles.genderButton, gender === 'boy' && styles.genderActive]}
-            onPress={() => setGender('boy')}
+            style={[styles.genderButton, gender === 'male' && styles.genderActive]}
+            onPress={() => setGender('male')}
           >
-            <Text color={gender === 'boy' ? Colors.white : Colors.text}>Boy</Text>
+            <Text color={gender === 'male' ? Colors.white : Colors.text}>Boy</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.genderButton, gender === 'girl' && styles.genderActive]}
-            onPress={() => setGender('girl')}
+            style={[styles.genderButton, gender === 'female' && styles.genderActive]}
+            onPress={() => setGender('female')}
           >
-            <Text color={gender === 'girl' ? Colors.white : Colors.text}>Girl</Text>
+            <Text color={gender === 'female' ? Colors.white : Colors.text}>Girl</Text>
           </TouchableOpacity>
         </View>
 

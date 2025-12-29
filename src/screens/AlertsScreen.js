@@ -258,6 +258,7 @@ export default function AlertsScreen() {
                                     </TouchableOpacity>
                                 </View>
 
+<<<<<<< Updated upstream
                                 <View style={styles.inputGroup}>
                                     <Text variant="label">Context / Routine</Text>
                                     <TextInput
@@ -340,6 +341,38 @@ export default function AlertsScreen() {
                     >
                         <Text style={{ color: colors.primary, fontSize: 16, fontWeight: '500' }}>+ Add Reminder</Text>
                     </TouchableOpacity>
+=======
+                    <View style={styles.section}>
+                        <Text variant="label" style={{ marginBottom: Spacing.md }}>Reminder Time</Text>
+                        {Platform.OS === 'web' ? (
+                            <TouchableOpacity style={styles.timeButton}>
+                                <Text>{reminderTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                            </TouchableOpacity>
+                        ) : Platform.OS === 'android' ? (
+                            <>
+                                <TouchableOpacity onPress={() => setShowTimePicker(true)} style={styles.timeButton}>
+                                    <Text>{reminderTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</Text>
+                                </TouchableOpacity>
+                                {showTimePicker && (
+                                    <DateTimePicker
+                                        value={reminderTime}
+                                        mode="time"
+                                        display="default"
+                                        onChange={handleTimeChange}
+                                    />
+                                )}
+                            </>
+                        ) : (
+                            <DateTimePicker
+                                value={reminderTime}
+                                mode="time"
+                                display="default"
+                                onChange={handleTimeChange}
+                                style={styles.timePicker}
+                            />
+                        )}
+                    </View>
+>>>>>>> Stashed changes
 
                     <PrimaryButton
                         title="Save All Reminders"

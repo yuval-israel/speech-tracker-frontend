@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { View, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { API_BASE, apiJson } from '../api';
 import PrimaryButton from '../components/PrimaryButton';
 import LoadingIndicator from '../components/LoadingIndicator';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
 import { useAuth } from '../context/AuthContext';
+import authService from '../services/auth';
 import { Colors, Spacing, Typography } from '../theme';
 
 export default function RegisterScreen() {
@@ -21,60 +21,45 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     setError('');
+
     // Client-side validation
-    if (!username || !password) {
-      setError('Please enter a username and password.');
+    if (!username.trim()) {
+      setError('Please enter a username.');
       return;
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+    if (!password) {
+      setError('Please enter a password.');
       return;
     }
-    if (!/[0-9]/.test(password)) {
-      setError('Password must contain at least one number.');
+    if (username.trim().length < 3) {
+      setError('Username must be at least 3 characters.');
       return;
     }
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+
     try {
       setLoading(true);
-      // Register new user via apiJson to capture backend validation messages
-      try {
-        await apiJson('/users/', null, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-      } catch (err) {
-        // show backend validation errors
-        setError(err && err.message ? err.message : 'Registration failed');
-        setLoading(false);
-        return;
-      }
 
-      // Registration successful, auto-login the user
-      try {
-        const bodyData = `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-        const loginRes = await fetch(`${API_BASE}/auth/token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: bodyData
-        });
+      // Register new user
+      await authService.register(username.trim(), password);
 
-        if (loginRes.ok) {
-          const loginData = await loginRes.json();
-          const token = loginData.access_token;
-          await signIn(token);
-        } else {
-          // If auto-login fails, redirect to login
-          navigation.navigate('Login');
-        }
-      } catch (e) {
+      // Auto-login after successful registration
+      try {
+        const loginResponse = await authService.login(username.trim(), password);
+        await signIn(loginResponse.access_token);
+        // Navigation is handled by auth state change
+      } catch (loginErr) {
+        // If auto-login fails, redirect to login screen
+        console.error('Auto-login failed after registration:', loginErr);
         navigation.navigate('Login');
-      } finally {
-        setLoading(false);
       }
     } catch (err) {
       console.error('Registration error:', err);
-      setError('Network error. Please try again.');
+      setError(err.message || 'Registration failed. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
