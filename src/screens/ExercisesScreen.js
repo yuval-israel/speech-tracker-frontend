@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, FlatList, TouchableOpacity, Image } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../context/AuthContext';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
-import { Colors, Spacing, Layout } from '../theme';
+import { Spacing, Layout, useTheme } from '../theme';
 
 const EXERCISES = [
     { id: '1', title: 'Vowel Sounds', category: 'Basics', duration: '5 min' },
@@ -16,24 +18,27 @@ const CATEGORIES = ['All', 'Basics', 'Fun', 'Numbers', 'Listening'];
 
 export default function ExercisesScreen() {
     const [selectedCategory, setSelectedCategory] = useState('All');
+    const { colors } = useTheme();
+    const { selectedChild } = useAuth();
+    const navigation = useNavigation();
 
     const filteredExercises = selectedCategory === 'All'
         ? EXERCISES
         : EXERCISES.filter(e => e.category === selectedCategory);
 
     const renderItem = ({ item }) => (
-        <TouchableOpacity style={styles.card}>
+        <TouchableOpacity style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.cardContent}>
                 <Text variant="h3" style={styles.cardTitle}>{item.title}</Text>
                 <View style={styles.cardMeta}>
-                    <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{item.category}</Text>
+                    <View style={[styles.badge, { backgroundColor: colors.background, borderColor: colors.border }]}>
+                        <Text style={[styles.badgeText, { color: colors.textLight }]}>{item.category}</Text>
                     </View>
-                    <Text variant="small" color={Colors.textLight}>{item.duration}</Text>
+                    <Text variant="small">{item.duration}</Text>
                 </View>
             </View>
-            <View style={styles.playButton}>
-                <Text color={Colors.white}>▶</Text>
+            <View style={[styles.playButton, { backgroundColor: colors.primary }]}>
+                <Text color="#FFFFFF">▶</Text>
             </View>
         </TouchableOpacity>
     );
@@ -41,7 +46,27 @@ export default function ExercisesScreen() {
     return (
         <ScreenContainer>
             <View style={styles.header}>
+                {/* Child Switcher Component */}
+                <View style={[styles.childHeader, { borderColor: colors.border }]}>
+                    <View>
+                        <Text variant="label" style={{ color: colors.muted, marginBottom: 4 }}>Current Profile</Text>
+                        <Text variant="h2" style={{ color: colors.primary }}>
+                            {selectedChild?.name || 'Select Child'}
+                        </Text>
+                    </View>
+                    <TouchableOpacity
+                        style={[styles.switchButton, { backgroundColor: colors.surface, borderColor: colors.primary }]}
+                        onPress={() => navigation.navigate('MyFamily', { screen: 'ChildList' })}
+                    >
+                        <Text style={{ color: colors.primary, fontWeight: '500', marginRight: 4 }}>Switch</Text>
+                        <Text style={{ color: colors.primary }}>→</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+
+            <View style={styles.sectionHeader}>
                 <Text variant="h1">Exercises</Text>
+                <Text variant="small" style={{ color: colors.muted }}>Daily practices for {selectedChild?.name || 'your child'}</Text>
             </View>
 
             <View style={styles.filterContainer}>
@@ -54,13 +79,15 @@ export default function ExercisesScreen() {
                         <TouchableOpacity
                             style={[
                                 styles.filterChip,
-                                selectedCategory === item && styles.filterChipSelected
+                                { backgroundColor: colors.background, borderColor: colors.border },
+                                selectedCategory === item && { backgroundColor: colors.primary, borderColor: colors.primary }
                             ]}
                             onPress={() => setSelectedCategory(item)}
                         >
                             <Text
                                 style={[
                                     styles.filterText,
+                                    { color: colors.text },
                                     selectedCategory === item && styles.filterTextSelected
                                 ]}
                             >
@@ -84,8 +111,29 @@ export default function ExercisesScreen() {
 
 const styles = StyleSheet.create({
     header: {
+        marginBottom: Spacing.sm,
+        marginTop: Spacing.sm,
+    },
+    childHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: Spacing.md,
+        paddingHorizontal: Spacing.sm,
         marginBottom: Spacing.md,
-        marginTop: Spacing.md,
+        borderBottomWidth: 1,
+        borderStyle: 'dashed',
+    },
+    switchButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: Spacing.md,
+        paddingVertical: Spacing.xs,
+        borderRadius: 20,
+        borderWidth: 1,
+    },
+    sectionHeader: {
+        marginBottom: Spacing.lg,
     },
     filterContainer: {
         marginBottom: Spacing.lg,
@@ -99,18 +147,11 @@ const styles = StyleSheet.create({
         paddingVertical: Spacing.xs,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: Colors.border,
-        backgroundColor: Colors.background,
-    },
-    filterChipSelected: {
-        backgroundColor: Colors.primary,
-        borderColor: Colors.primary,
     },
     filterText: {
-        color: Colors.text,
     },
     filterTextSelected: {
-        color: Colors.white,
+        color: '#FFFFFF',
         fontWeight: 'bold',
     },
     list: {
@@ -118,13 +159,11 @@ const styles = StyleSheet.create({
         paddingBottom: Spacing.xl,
     },
     card: {
-        backgroundColor: Colors.surface,
         padding: Spacing.md,
         borderRadius: 12,
         flexDirection: 'row',
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: Colors.border,
     },
     cardContent: {
         flex: 1,
@@ -138,22 +177,18 @@ const styles = StyleSheet.create({
         gap: Spacing.md,
     },
     badge: {
-        backgroundColor: Colors.background,
         paddingHorizontal: Spacing.xs,
         paddingVertical: 2,
         borderRadius: 4,
         borderWidth: 1,
-        borderColor: Colors.border,
     },
     badgeText: {
         fontSize: 10,
-        color: Colors.textLight,
     },
     playButton: {
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: Colors.primary,
         justifyContent: 'center',
         alignItems: 'center',
         marginLeft: Spacing.md,

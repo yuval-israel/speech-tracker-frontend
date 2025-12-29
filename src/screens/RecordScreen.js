@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, TouchableOpacity, Platform, Alert } from 'react-native';
 import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
+import NetInfo from '@react-native-community/netinfo';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
@@ -9,17 +10,24 @@ import PrimaryButton from '../components/PrimaryButton';
 import LoadingIndicator from '../components/LoadingIndicator';
 import { API_BASE } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { Colors, Spacing, Layout } from '../theme';
+import { Spacing, Layout, useTheme } from '../theme';
+import offlineQueue from '../services/offlineQueue';
+import Waveform from '../components/Waveform';
+import ExpertAvatar from '../components/ExpertAvatar';
 
 export default function RecordScreen() {
   const route = useRoute();
   const navigation = useNavigation();
-  const { token } = useAuth();
+  const { token, selectedChild } = useAuth();
+  const { colors } = useTheme();
 
-  const { childId, childName } = route.params || {};
+  // Use route params if available, otherwise fall back to selectedChild from context
+  const childId = route.params?.childId || selectedChild?.id;
+  const childName = route.params?.childName || selectedChild?.name;
 
   const [recording, setRecording] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [metering, setMetering] = useState(-160);
   const [recordingUri, setRecordingUri] = useState(null);
   const [duration, setDuration] = useState(0);
   const [uploading, setUploading] = useState(false);
@@ -52,7 +60,16 @@ export default function RecordScreen() {
 
       console.log('Starting recording..');
       const { recording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
+        {
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+          isMeteringEnabled: true
+        },
+        (status) => {
+          if (status.isRecording && typeof status.metering === 'number') {
+            setMetering(status.metering);
+          }
+        },
+        100 // Update metering every 100ms
       );
       setRecording(recording);
       setIsRecording(true);
@@ -92,6 +109,39 @@ export default function RecordScreen() {
     setUploading(true);
     setUploadError('');
 
+    // Check connectivity first
+    const netInfo = await NetInfo.fetch();
+
+    if (!netInfo.isConnected) {
+      // Queue for later upload when offline
+      try {
+        await offlineQueue.addToQueue({
+          uri: recordingUri,
+          childId,
+          childName,
+          duration,
+          recordedAt: new Date().toISOString(),
+        });
+
+        Alert.alert(
+          'Saved Offline',
+          'Your recording has been saved and will be uploaded automatically when you\'re back online.',
+          [{ text: 'OK' }]
+        );
+
+        // Reset for another recording - stay on screen
+        setRecordingUri(null);
+        setDuration(0);
+      } catch (err) {
+        console.error('Failed to queue recording:', err);
+        setUploadError('Failed to save recording offline. Please try again.');
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
+
+    // Online - upload directly
     try {
       const formData = new FormData();
 
@@ -137,21 +187,41 @@ export default function RecordScreen() {
       const data = await response.json();
       console.log('Upload successful:', data);
 
-      try {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "Upload Success",
-            body: "Your recording has been uploaded successfully!",
-          },
-          trigger: null,
-        });
-      } catch (err) {
-        console.log('Failed to schedule notification', err);
-      }
+      // Show success alert
+      Alert.alert(
+        'Upload Successful!',
+        `Your ${formatDuration(duration)} recording has been uploaded and is being processed.`,
+        [{ text: 'OK' }]
+      );
 
-      navigation.navigate('Home');
+      // Reset for another recording - stay on screen
+      setRecordingUri(null);
+      setDuration(0);
     } catch (err) {
       console.error('Upload error:', err);
+
+      // If upload fails due to network, queue it
+      if (err.message?.includes('Network') || err.message?.includes('network')) {
+        try {
+          await offlineQueue.addToQueue({
+            uri: recordingUri,
+            childId,
+            childName,
+            duration,
+            recordedAt: new Date().toISOString(),
+          });
+          Alert.alert(
+            'Saved Offline',
+            'Upload failed but your recording has been saved. It will be uploaded automatically when connectivity is restored.',
+            [{ text: 'OK' }]
+          );
+          navigation.navigate('Home');
+          return;
+        } catch (queueErr) {
+          console.error('Failed to queue after upload error:', queueErr);
+        }
+      }
+
       setUploadError(err.message || 'Failed to upload recording. Please try again.');
     } finally {
       setUploading(false);
@@ -174,19 +244,30 @@ export default function RecordScreen() {
       <View style={styles.container}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <Text color={Colors.primary}>← Back</Text>
+            <Text color={colors.primary}>← Back</Text>
           </TouchableOpacity>
         </View>
 
-        <Text variant="h1" align="center">Record Session</Text>
+        <View style={{ marginTop: 60, marginBottom: 20 }}>
+          <ExpertAvatar
+            message={
+              isRecording ? "I'm listening..." :
+                uploading ? "Saving your good work..." :
+                  recordingUri ? "Great job! Ready to upload?" :
+                    `Ready to record ${childName ? childName + "'s" : "a"} session?`
+            }
+          />
+        </View>
+
+        {/* <Text variant="h1" align="center">Record Session</Text> */}
         {childName && (
-          <Text variant="body" align="center" color={Colors.textLight} style={styles.childName}>
+          <Text variant="body" align="center" style={styles.childName}>
             {childName}
           </Text>
         )}
 
         <View style={styles.timerContainer}>
-          <Text style={styles.timerText}>{formatDuration(duration)}</Text>
+          <Text style={[styles.timerText, { color: colors.text }]}>{formatDuration(duration)}</Text>
         </View>
 
         {uploadError ? (
@@ -207,19 +288,19 @@ export default function RecordScreen() {
                 style={styles.uploadButton}
               />
               <TouchableOpacity onPress={discardRecording} style={styles.discardButton}>
-                <Text color={Colors.danger}>Discard</Text>
+                <Text color={colors.danger}>Discard</Text>
               </TouchableOpacity>
             </View>
           </View>
         ) : (
           <View style={styles.controls}>
             <TouchableOpacity
-              style={[styles.recordButton, isRecording && styles.recordingActive]}
+              style={[styles.recordButton, { borderColor: colors.primary }, isRecording && { borderColor: colors.danger }]}
               onPress={isRecording ? stopRecording : startRecording}
             >
-              <View style={[styles.innerRecordButton, isRecording && styles.innerRecordingActive]} />
+              <View style={[styles.innerRecordButton, { backgroundColor: colors.primary }, isRecording && styles.innerRecordingActive]} />
             </TouchableOpacity>
-            <Text style={styles.statusText}>
+            <Text style={[styles.statusText, { color: colors.textLight }]}>
               {isRecording ? 'Recording...' : 'Tap to Record'}
             </Text>
           </View>
@@ -256,8 +337,7 @@ const styles = StyleSheet.create({
   timerText: {
     fontSize: 64,
     fontWeight: '200',
-    fontVariant: ['tabular-nums'],
-    color: Colors.text,
+    fontVariant: 'tabular-nums',
   },
   controls: {
     alignItems: 'center',
@@ -267,34 +347,28 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     borderWidth: 4,
-    borderColor: Colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Spacing.md,
-  },
-  recordingActive: {
-    borderColor: Colors.danger,
   },
   innerRecordButton: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: Colors.primary,
   },
   innerRecordingActive: {
     width: 30,
     height: 30,
     borderRadius: 4,
-    backgroundColor: Colors.danger,
+    backgroundColor: '#E57373',
   },
   statusText: {
-    color: Colors.textLight,
     fontSize: 16,
   },
   readyText: {
     fontSize: 18,
     marginBottom: Spacing.lg,
-    color: Colors.success,
+    color: '#81C784',
     fontWeight: '500',
   },
   buttonGroup: {
@@ -309,7 +383,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   errorText: {
-    color: Colors.danger,
+    color: '#E57373',
     textAlign: 'center',
     marginBottom: Spacing.md,
   },

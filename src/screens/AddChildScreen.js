@@ -44,8 +44,8 @@ export default function AddChildScreen() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: name.trim(),
-          birth_date: formattedDate,
-          gender: gender
+          birthdate: formattedDate,  // Fixed: was birth_date
+          gender: gender === 'boy' ? 'male' : 'female'  // Fixed: map to enum values
         })
       });
 
@@ -53,7 +53,12 @@ export default function AddChildScreen() {
       navigation.goBack();
     } catch (err) {
       console.error('Error adding child:', err);
-      setError(err.message || 'Failed to add child.');
+      // Handle array of validation errors from backend
+      let errorMsg = err.message || 'Failed to add child.';
+      if (err.data && Array.isArray(err.data.detail)) {
+        errorMsg = err.data.detail.map(e => e.msg || e.message || JSON.stringify(e)).join(', ');
+      }
+      setError(errorMsg);
     } finally {
       setLoading(false);
     }
@@ -79,12 +84,35 @@ export default function AddChildScreen() {
         />
 
         <Text variant="label">Birth Date</Text>
-        {Platform.OS === 'android' && (
-          <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateButton}>
-            <Text>{birthDate.toLocaleDateString()}</Text>
-          </TouchableOpacity>
-        )}
-        {(showDatePicker || Platform.OS === 'ios') && (
+        {Platform.OS === 'web' ? (
+          <TextInput
+            style={styles.input}
+            placeholder="YYYY-MM-DD"
+            value={birthDate.toISOString().split('T')[0]}
+            onChangeText={(text) => {
+              // Parse the date from text input
+              const parsed = new Date(text);
+              if (!isNaN(parsed.getTime())) {
+                setBirthDate(parsed);
+              }
+            }}
+          />
+        ) : Platform.OS === 'android' ? (
+          <>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={styles.dateButton}>
+              <Text>{birthDate.toLocaleDateString()}</Text>
+            </TouchableOpacity>
+            {showDatePicker && (
+              <DateTimePicker
+                value={birthDate}
+                mode="date"
+                display="default"
+                onChange={handleDateChange}
+                maximumDate={new Date()}
+              />
+            )}
+          </>
+        ) : (
           <DateTimePicker
             value={birthDate}
             mode="date"

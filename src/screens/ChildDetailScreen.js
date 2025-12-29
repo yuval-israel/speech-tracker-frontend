@@ -1,19 +1,20 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { View, StyleSheet, ScrollView, TouchableOpacity, RefreshControl } from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { apiJson } from '../api';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
 import PrimaryButton from '../components/PrimaryButton';
 import LoadingIndicator from '../components/LoadingIndicator';
 import { useAuth } from '../context/AuthContext';
-import { Colors, Spacing } from '../theme';
+import { Spacing, useTheme } from '../theme';
 import { calculateAge } from '../utils/dateUtils';
 
 export default function ChildDetailScreen() {
   const navigation = useNavigation();
   const route = useRoute();
   const { token } = useAuth();
+  const { colors } = useTheme();
 
   const { childId, name } = route.params || {};
 
@@ -23,7 +24,7 @@ export default function ChildDetailScreen() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = async (isRefresh = false) => {
+  const fetchData = useCallback(async (isRefresh = false) => {
     setError('');
     if (!isRefresh) setLoading(true);
     try {
@@ -45,13 +46,16 @@ export default function ChildDetailScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    if (childId && token) {
-      fetchData();
-    }
   }, [childId, token]);
+
+  // Refresh recordings when screen gains focus
+  useFocusEffect(
+    useCallback(() => {
+      if (childId && token) {
+        fetchData();
+      }
+    }, [fetchData])
+  );
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -61,15 +65,15 @@ export default function ChildDetailScreen() {
   const getStatusColor = (status) => {
     switch (status) {
       case 'ready':
-        return Colors.success;
+        return colors.success;
       case 'queued':
       case 'transcribing':
       case 'analyzing':
-        return Colors.warning;
+        return colors.warning;
       case 'failed':
-        return Colors.danger;
+        return colors.danger;
       default:
-        return Colors.textLight;
+        return colors.textLight;
     }
   };
 
@@ -108,7 +112,7 @@ export default function ChildDetailScreen() {
     <ScreenContainer>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Text color={Colors.primary}>← Back</Text>
+          <Text color={colors.primary}>← Back</Text>
         </TouchableOpacity>
         <Text variant="h2">{name || child?.name}</Text>
         <View style={{ width: 50 }} />
@@ -117,10 +121,10 @@ export default function ChildDetailScreen() {
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {child && (
-        <View style={styles.childInfo}>
+        <View style={[styles.childInfo, { backgroundColor: colors.surface }]}>
           <Text variant="h3">{child.name}</Text>
-          <Text variant="small" color={Colors.textLight}>
-            Age: {calculateAge(child.birth_date)} • Gender: {child.gender}
+          <Text variant="small">
+            Age: {calculateAge(child.birthdate)} • Gender: {child.gender}
           </Text>
         </View>
       )}
@@ -136,7 +140,7 @@ export default function ChildDetailScreen() {
         {recordings.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.noRecordings}>No recordings yet.</Text>
-            <Text variant="small" color={Colors.textLight} align="center">
+            <Text variant="small" align="center">
               Start recording to track speech development!
             </Text>
           </View>
@@ -144,7 +148,7 @@ export default function ChildDetailScreen() {
           recordings.map(recording => (
             <TouchableOpacity
               key={recording.id}
-              style={styles.recordingItem}
+              style={[styles.recordingItem, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={() => navigateToAnalysis(recording)}
               disabled={recording.status !== 'ready'}
             >
@@ -160,7 +164,7 @@ export default function ChildDetailScreen() {
                 </Text>
               </View>
               {recording.created_at && (
-                <Text variant="small" color={Colors.textLight}>
+                <Text variant="small">
                   {new Date(recording.created_at).toLocaleDateString()} at{' '}
                   {new Date(recording.created_at).toLocaleTimeString()}
                 </Text>
@@ -194,11 +198,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.xl,
     padding: Spacing.md,
-    backgroundColor: Colors.surface,
     borderRadius: 12,
   },
   error: {
-    color: Colors.danger,
+    color: '#E57373',
     marginBottom: Spacing.md,
     textAlign: 'center',
   },
@@ -211,11 +214,9 @@ const styles = StyleSheet.create({
   },
   recordingItem: {
     padding: Spacing.md,
-    backgroundColor: Colors.surface,
     borderRadius: 8,
     marginBottom: Spacing.sm,
     borderWidth: 1,
-    borderColor: Colors.border,
   },
   recordingHeader: {
     flexDirection: 'row',
@@ -234,7 +235,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     textAlign: 'center',
     marginBottom: Spacing.sm,
-    color: Colors.textLight,
   },
   footer: {
     gap: Spacing.md,

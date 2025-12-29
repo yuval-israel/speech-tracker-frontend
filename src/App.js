@@ -3,10 +3,14 @@ import { Platform, I18nManager } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
-import { Colors } from './theme';
+import { Colors, ThemeProvider, useTheme } from './theme';
 import Navigation from './navigation/Navigation';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { setOnUnauthorized, API_BASE } from './api';
+import offlineQueue from './services/offlineQueue';
+
+// Initialize offline queue to start syncing when connectivity is restored
+offlineQueue.init();
 
 // Force RTL
 try {
@@ -23,15 +27,15 @@ try {
 SplashScreen.preventAutoHideAsync();
 
 const AppContent = () => {
-  const { token, isLoading: authLoading, signOut } = useAuth();
-  const [hasConfiguredFamily, setHasConfiguredFamily] = useState(false);
+  const { token, isLoading: authLoading, signOut, hasConfiguredFamily, setHasConfiguredFamily } = useAuth();
+  const { isDark, colors } = useTheme();
   const [isCheckingFamily, setIsCheckingFamily] = useState(true);
 
+  // Check for existing children on token change
   useEffect(() => {
     const checkForChildren = async () => {
       if (!token) {
         setIsCheckingFamily(false);
-        setHasConfiguredFamily(false);
         return;
       }
 
@@ -44,20 +48,19 @@ const AppContent = () => {
 
         if (response.ok) {
           const children = await response.json();
-          setHasConfiguredFamily(children && children.length > 0);
-        } else {
-          setHasConfiguredFamily(false);
+          if (children && children.length > 0) {
+            setHasConfiguredFamily(true);
+          }
         }
       } catch (error) {
         console.error('Failed to check for children:', error);
-        setHasConfiguredFamily(false);
       } finally {
         setIsCheckingFamily(false);
       }
     };
 
     checkForChildren();
-  }, [token]);
+  }, [token, setHasConfiguredFamily]);
 
   useEffect(() => {
     if (!authLoading && !isCheckingFamily) {
@@ -79,7 +82,7 @@ const AppContent = () => {
         hasConfiguredFamily={hasConfiguredFamily}
         isLoading={isLoading}
       />
-      <StatusBar style={Platform.OS === 'ios' ? 'dark' : 'auto'} backgroundColor={Colors.background} />
+      <StatusBar style={isDark ? 'light' : 'dark'} backgroundColor={colors.background} />
     </>
   );
 };
@@ -87,9 +90,11 @@ const AppContent = () => {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppContent />
+        </AuthProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }

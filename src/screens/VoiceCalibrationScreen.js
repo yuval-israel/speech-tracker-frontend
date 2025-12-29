@@ -9,6 +9,7 @@ import LoadingIndicator from '../components/LoadingIndicator';
 import { API_BASE } from '../api';
 import { useAuth } from '../context/AuthContext';
 import { Colors, Spacing } from '../theme';
+import ExpertAvatar from '../components/ExpertAvatar';
 
 const createInitialStampState = () => ({
   recording: null,
@@ -118,9 +119,10 @@ export default function VoiceCalibrationScreen() {
       };
 
       formData.append('file', fileToUpload);
-      formData.append('speaker_role', type === 'parent' ? 'parent' : 'child');
+      // speaker_name is passed as query parameter to match backend API
 
-      const response = await fetch(`${API_BASE}/voice-stamps/?child_id=${childId}`, {
+      const speakerName = type === 'parent' ? 'parent' : 'child';
+      const response = await fetch(`${API_BASE}/voice-stamps/?child_id=${childId}&speaker_name=${speakerName}`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -165,9 +167,13 @@ export default function VoiceCalibrationScreen() {
         <Text variant="h1" style={styles.title}>
           Define Family Voices
         </Text>
-        <Text variant="body" color={Colors.textLight} style={styles.subtitle}>
-          Record a short sample so we can distinguish between parent and child during sessions.
-        </Text>
+
+        <View style={{ marginBottom: Spacing.lg }}>
+          <ExpertAvatar
+            message="To help our AI understand your family, please record a short sample of your voice and your child's voice. This takes less than a minute!"
+            compact={false}
+          />
+        </View>
 
         <View style={styles.card}>
           <Text variant="h3" style={styles.cardTitle}>

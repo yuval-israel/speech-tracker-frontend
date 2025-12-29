@@ -3,7 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View, ActivityIndicator, Platform } from 'react-native';
-import { Colors, Layout } from '../theme';
+import { Layout, Spacing, useTheme } from '../theme';
 import Text from '../components/Text';
 
 // Screens
@@ -19,6 +19,7 @@ import AlertsScreen from '../screens/AlertsScreen';
 import DataScreen from '../screens/DataScreen';
 import ExercisesScreen from '../screens/ExercisesScreen';
 import VoiceCalibrationScreen from '../screens/VoiceCalibrationScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 
 // Placeholder for missing screens
 const PlaceholderScreen = ({ route }) => (
@@ -62,46 +63,57 @@ const FamilyNavigator = () => (
     </FamilyStack.Navigator>
 );
 
-// Main Tabs
-const MainNavigator = () => (
-    <Tab.Navigator
-        screenOptions={{
-            headerShown: false,
-            tabBarStyle: {
-                height: Layout.BOTTOM_NAV_HEIGHT,
-                paddingBottom: Layout.Spacing.sm,
-                paddingTop: Layout.Spacing.sm,
-            },
-            tabBarActiveTintColor: Colors.primary,
-            tabBarInactiveTintColor: Colors.muted,
-            tabBarLabelStyle: {
-                fontSize: 12,
-                fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
-            }
-        }}
-    >
-        <Tab.Screen name="Home" component={ExercisesScreen} options={{ 
-            title: 'Home',
-            tabBarLabel: 'Home',
-        }} />
-        <Tab.Screen name="Record" component={RecordScreen} options={{
-            title: 'Record',
-            tabBarLabel: 'Record',
-        }} />
-        <Tab.Screen name="Data" component={DataScreen} options={{
-            title: 'Data',
-            tabBarLabel: 'Data',
-        }} />
-        <Tab.Screen name="Alerts" component={AlertsScreen} options={{
-            title: 'Alerts',
-            tabBarLabel: 'Alerts',
-        }} />
-        <Tab.Screen name="MyFamily" component={FamilyNavigator} options={{ 
-            title: 'My Family',
-            tabBarLabel: 'Family',
-        }} />
-    </Tab.Navigator>
-);
+// Main Tabs - now uses theme
+const MainNavigator = () => {
+    const { colors, isDark } = useTheme();
+
+    return (
+        <Tab.Navigator
+            screenOptions={{
+                headerShown: false,
+                tabBarStyle: {
+                    height: Layout.BOTTOM_NAV_HEIGHT,
+                    paddingBottom: Spacing.sm,
+                    paddingTop: Spacing.sm,
+                    backgroundColor: colors.surface,
+                    borderTopColor: colors.border,
+                },
+                tabBarActiveTintColor: colors.primary,
+                tabBarInactiveTintColor: colors.muted,
+                tabBarLabelStyle: {
+                    fontSize: 12,
+                    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+                }
+            }}
+        >
+            <Tab.Screen name="Home" component={ExercisesScreen} options={{
+                title: 'Home',
+                tabBarLabel: 'Home',
+            }} />
+            <Tab.Screen name="Record" component={RecordScreen} options={{
+                title: 'Record',
+                tabBarLabel: 'Record',
+            }} />
+            <Tab.Screen name="Data" component={DataScreen} options={{
+                title: 'Data',
+                tabBarLabel: 'Data',
+            }} />
+            <Tab.Screen name="Alerts" component={AlertsScreen} options={{
+                title: 'Alerts',
+                tabBarLabel: 'Alerts',
+            }} />
+            <Tab.Screen name="Profile" component={ProfileScreen} options={{
+                title: 'Profile',
+                tabBarLabel: 'Profile',
+            }} />
+            <Tab.Screen name="MyFamily" component={FamilyNavigator} options={{
+                title: 'My Family',
+                tabBarLabel: 'Family',
+                tabBarButton: () => null, // Hide from tab bar but keep accessible
+            }} />
+        </Tab.Navigator>
+    );
+};
 
 // App Stack (Main + Modals)
 const AppNavigator = () => (
@@ -111,10 +123,12 @@ const AppNavigator = () => (
 );
 
 export default function Navigation({ isAuthenticated, hasConfiguredFamily, isLoading }) {
+    const { colors } = useTheme();
+
     if (isLoading) {
         return (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-                <ActivityIndicator size="large" color={Colors.primary} />
+            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }

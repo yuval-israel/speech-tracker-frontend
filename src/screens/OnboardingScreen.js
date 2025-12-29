@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
 import PrimaryButton from '../components/PrimaryButton';
+import ExpertAvatar from '../components/ExpertAvatar';
 import { Colors, Spacing, Layout } from '../theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -48,6 +49,14 @@ export default function OnboardingScreen() {
         <ScreenContainer>
             <View style={styles.container}>
                 <View style={styles.slideContainer}>
+                    {currentPage === 0 && (
+                        <View style={{ marginBottom: Spacing.xl }}>
+                            <ExpertAvatar
+                                message="Hi there! I'm your speech tracking assistant, here to guide you."
+                                mood="happy"
+                            />
+                        </View>
+                    )}
                     <Text variant="h1" align="center" style={styles.title}>
                         {SLIDES[currentPage].title}
                     </Text>

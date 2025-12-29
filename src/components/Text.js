@@ -1,6 +1,6 @@
 import React from 'react';
 import { Text as RNText, StyleSheet, I18nManager } from 'react-native';
-import { Colors, Typography } from '../theme';
+import { useTheme, getTypography } from '../theme';
 
 const Text = ({
     style,
@@ -10,6 +10,9 @@ const Text = ({
     children,
     ...props
 }) => {
+    const { colors } = useTheme();
+    const Typography = getTypography(colors);
+
     const textStyle = [
         styles.base,
         Typography[variant],

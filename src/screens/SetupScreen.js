@@ -1,9 +1,12 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
+import PrimaryButton from '../components/PrimaryButton';
 import { Colors, Spacing, Layout } from '../theme';
+import { apiJson } from '../api';
+import { useAuth } from '../context/AuthContext';
 
 const SetupCard = ({ title, description, onPress, isCompleted }) => (
     <TouchableOpacity style={styles.card} onPress={onPress}>
@@ -21,10 +24,41 @@ const SetupCard = ({ title, description, onPress, isCompleted }) => (
 
 export default function SetupScreen() {
     const navigation = useNavigation();
+    const { token, setSelectedChild, setHasConfiguredFamily } = useAuth();
+    const [children, setChildren] = useState([]);
+    const [loading, setLoading] = useState(true);
 
-    // TODO: Check actual completion status from API/Context
-    const hasFamilyMembers = false;
+    // Fetch children when screen comes into focus
+    useFocusEffect(
+        useCallback(() => {
+            const fetchChildren = async () => {
+                if (!token) return;
+                try {
+                    const data = await apiJson('/children/', token);
+                    setChildren(data || []);
+                } catch (err) {
+                    console.error('Failed to fetch children:', err);
+                } finally {
+                    setLoading(false);
+                }
+            };
+            fetchChildren();
+        }, [token])
+    );
+
+    const hasFamilyMembers = children.length > 0;
+    const firstChild = children[0];
+    // TODO: Check if voice stamps exist for completion status
     const hasDefinedVoice = false;
+
+    const handleContinue = async () => {
+        // Set the first child as selected
+        if (firstChild) {
+            await setSelectedChild(firstChild);
+        }
+        // Mark family as configured - this triggers App.js to switch to MainNavigator
+        await setHasConfiguredFamily(true);
+    };
 
     return (
         <ScreenContainer>
@@ -38,7 +72,9 @@ export default function SetupScreen() {
             <View style={styles.cards}>
                 <SetupCard
                     title="Add Family Members"
-                    description="Create profiles for your children and family members."
+                    description={hasFamilyMembers
+                        ? `${children.length} child${children.length > 1 ? 'ren' : ''} added (${children.map(c => c.name).join(', ')})`
+                        : "Create profiles for your children and family members."}
                     onPress={() => navigation.navigate('AddChild')}
                     isCompleted={hasFamilyMembers}
                 />
@@ -46,18 +82,23 @@ export default function SetupScreen() {
                 <SetupCard
                     title="Define Voices"
                     description="Help us recognize who is speaking during sessions."
-                    onPress={() => navigation.navigate('VoiceCalibration')}
+                    onPress={() => {
+                        if (firstChild) {
+                            navigation.navigate('VoiceCalibration', { childId: firstChild.id });
+                        } else {
+                            navigation.navigate('AddChild');
+                        }
+                    }}
                     isCompleted={hasDefinedVoice}
                 />
             </View>
 
             {hasFamilyMembers && (
-                <TouchableOpacity
-                    style={styles.skipButton}
-                    onPress={() => navigation.navigate('MainTabs')}
-                >
-                    <Text color={Colors.primary} align="center">Go to Dashboard</Text>
-                </TouchableOpacity>
+                <PrimaryButton
+                    title="Continue to Dashboard"
+                    onPress={handleContinue}
+                    style={styles.continueButton}
+                />
             )}
         </ScreenContainer>
     );
@@ -94,8 +135,7 @@ const styles = StyleSheet.create({
     checkMark: {
         marginLeft: Spacing.md,
     },
-    skipButton: {
+    continueButton: {
         marginTop: Spacing.xl,
-        padding: Spacing.md,
     }
 });

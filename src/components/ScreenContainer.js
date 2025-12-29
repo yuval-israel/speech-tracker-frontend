@@ -1,19 +1,20 @@
 import React from 'react';
 import { View, StyleSheet, StatusBar, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Colors, Layout, Spacing } from '../theme';
+import { Layout, useTheme } from '../theme';
 
 const ScreenContainer = ({
     children,
     style,
     noPadding = false,
-    backgroundColor = Colors.background
 }) => {
+    const { isDark, colors } = useTheme();
+
     return (
-        <SafeAreaView style={[styles.container, { backgroundColor }]}>
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
             <StatusBar
-                barStyle={Platform.OS === 'ios' ? 'dark-content' : 'dark-content'}
-                backgroundColor={backgroundColor}
+                barStyle={isDark ? 'light-content' : 'dark-content'}
+                backgroundColor={colors.background}
             />
             <View style={[
                 styles.content,

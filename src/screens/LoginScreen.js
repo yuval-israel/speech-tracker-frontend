@@ -6,11 +6,12 @@ import LoadingIndicator from '../components/LoadingIndicator';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
 import { useAuth } from '../context/AuthContext';
-import { Colors, Spacing } from '../theme';
+import { Spacing, useTheme } from '../theme';
 
 export default function LoginScreen() {
   const navigation = useNavigation();
   const { signIn } = useAuth();
+  const { colors } = useTheme();
 
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -22,7 +23,6 @@ export default function LoginScreen() {
       setError('You must accept the Terms of Service to continue.');
       return;
     }
-    // Mock social login – replace with real provider integration later
     try {
       setLoading(true);
       await new Promise((resolve) => setTimeout(resolve, 800));
@@ -38,11 +38,10 @@ export default function LoginScreen() {
     <ScreenContainer style={styles.container}>
       <View style={styles.content}>
         <Text variant="h1" align="center" style={styles.title}>Speech Tracker</Text>
-        <Text variant="body" align="center" color={Colors.textLight} style={styles.subtitle}>
+        <Text variant="body" align="center" style={styles.subtitle}>
           Track and support your child&apos;s speech in everyday life.
         </Text>
 
-        {/* Social Login */}
         <View style={styles.socialContainer}>
           <PrimaryButton
             title="Continue with Google"
@@ -58,29 +57,32 @@ export default function LoginScreen() {
           />
         </View>
 
-        {/* Terms of Service */}
         <TouchableOpacity
           style={styles.tosRow}
           onPress={() => setAcceptTos(!acceptTos)}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: acceptTos }}
         >
-          <View style={[styles.checkbox, acceptTos && styles.checkboxChecked]}>
-            {acceptTos ? <Text color={Colors.card}>✓</Text> : null}
+          <View style={[
+            styles.checkbox,
+            { borderColor: colors.border, backgroundColor: colors.surface },
+            acceptTos && { backgroundColor: colors.primary, borderColor: colors.primary }
+          ]}>
+            {acceptTos ? <Text color="#FFFFFF">✓</Text> : null}
           </View>
           <Text variant="small" style={styles.tosText}>
             I agree to the Terms of Service and Privacy Policy
           </Text>
         </TouchableOpacity>
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        {error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
 
         {loading ? <LoadingIndicator size="small" text="Signing you in…" /> : null}
 
         <View style={styles.footer}>
           <Text align="center">Don't have an account?</Text>
           <TouchableOpacity onPress={() => navigation.navigate('Register')}>
-            <Text color={Colors.primary} align="center" style={styles.link}>Sign Up</Text>
+            <Text color={colors.primary} align="center" style={styles.link}>Sign Up</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -103,21 +105,6 @@ const styles = StyleSheet.create({
   subtitle: {
     marginBottom: Spacing.xl,
   },
-  dividerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: Spacing.lg,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.divider,
-  },
-  dividerText: {
-    marginHorizontal: Spacing.md,
-    color: Colors.textLight,
-    fontWeight: '500',
-  },
   socialContainer: {
     marginTop: Spacing.xl,
     gap: Spacing.md,
@@ -127,7 +114,6 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   error: {
-    color: Colors.danger,
     marginBottom: Spacing.md,
     textAlign: 'center'
   },
@@ -153,15 +139,9 @@ const styles = StyleSheet.create({
     height: 20,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: Colors.border,
     marginRight: Spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.card,
-  },
-  checkboxChecked: {
-    backgroundColor: Colors.primary,
-    borderColor: Colors.primary,
   },
   tosText: {
     flex: 1,

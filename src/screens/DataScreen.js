@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Rect, Text as SvgText } from 'react-native-svg';
 import ScreenContainer from '../components/ScreenContainer';
 import Text from '../components/Text';
-import { Colors, Spacing, Layout } from '../theme';
+import { Spacing, Layout, useTheme } from '../theme';
 import { apiJson } from '../api';
 import { useAuth } from '../context/AuthContext';
 
@@ -13,7 +13,7 @@ const screenWidth = Dimensions.get('window').width;
 const RADIUS = 70;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-const LanguageUnitsRing = ({ percent }) => {
+const LanguageUnitsRing = ({ percent, colors }) => {
     const clamped = Math.max(0, Math.min(100, percent || 0));
     const strokeDashoffset = CIRCUMFERENCE - (CIRCUMFERENCE * clamped) / 100;
 
@@ -27,12 +27,11 @@ const LanguageUnitsRing = ({ percent }) => {
                     height={RADIUS * 2 + 20}
                     fill="transparent"
                 />
-                {/* Background circle */}
                 <SvgText
                     x="50%"
                     y="50%"
                     fontSize="32"
-                    fill={Colors.text}
+                    fill={colors.text}
                     textAnchor="middle"
                     alignmentBaseline="central"
                 >
@@ -43,9 +42,9 @@ const LanguageUnitsRing = ({ percent }) => {
     );
 };
 
-const VocabularyBars = ({ vocabulary }) => {
+const VocabularyBars = ({ vocabulary, colors }) => {
     const entries = vocabulary || [];
-    if (!entries.length) return <Text variant="small" color={Colors.textLight}>No vocabulary data yet.</Text>;
+    if (!entries.length) return <Text variant="small">No vocabulary data yet.</Text>;
 
     const maxValue = Math.max(...entries.map(e => e.value || 0), 1);
 
@@ -56,10 +55,10 @@ const VocabularyBars = ({ vocabulary }) => {
                 return (
                     <View key={item.label} style={styles.vocabRow}>
                         <Text style={styles.vocabLabel}>{item.label}</Text>
-                        <View style={styles.vocabBarBackground}>
-                            <View style={[styles.vocabBarFill, { width }]} />
+                        <View style={[styles.vocabBarBackground, { backgroundColor: colors.background }]}>
+                            <View style={[styles.vocabBarFill, { width, backgroundColor: colors.primary }]} />
                         </View>
-                        <Text variant="small" color={Colors.textLight}>{item.value}</Text>
+                        <Text variant="small">{item.value}</Text>
                     </View>
                 );
             })}
@@ -67,18 +66,18 @@ const VocabularyBars = ({ vocabulary }) => {
     );
 };
 
-const InteractionMeter = ({ score }) => {
+const InteractionMeter = ({ score, colors }) => {
     const clamped = Math.max(0, Math.min(100, score || 0));
 
     return (
         <View>
-            <View style={styles.meterTrack}>
-                <View style={[styles.meterFill, { width: `${clamped}%` }]} />
+            <View style={[styles.meterTrack, { backgroundColor: colors.background }]}>
+                <View style={[styles.meterFill, { width: `${clamped}%`, backgroundColor: colors.primary }]} />
             </View>
             <View style={styles.meterLabels}>
-                <Text variant="small" color={Colors.textLight}>Calm</Text>
-                <Text variant="small" color={Colors.textLight}>Engaged</Text>
-                <Text variant="small" color={Colors.textLight}>Overloaded</Text>
+                <Text variant="small">Calm</Text>
+                <Text variant="small">Engaged</Text>
+                <Text variant="small">Overloaded</Text>
             </View>
         </View>
     );
@@ -86,6 +85,7 @@ const InteractionMeter = ({ score }) => {
 
 export default function DataScreen() {
     const { token, selectedChild } = useAuth();
+    const { colors } = useTheme();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
@@ -98,23 +98,22 @@ export default function DataScreen() {
             const cacheKey = `ANALYSIS_CACHE_${selectedChild.id}`;
 
             try {
-                // Fetch from global_child_summed.json endpoint
-                const result = await apiJson(`/global_child_summed.json?child_id=${selectedChild.id}`, token);
+                const result = await apiJson(`/analysis/children/${selectedChild.id}/global`, token);
                 setData(result);
-                // Cache the result
                 await AsyncStorage.setItem(cacheKey, JSON.stringify(result));
             } catch (err) {
                 console.error('Failed to load analysis dashboard', err);
 
-                // Try to load from cache
                 try {
                     const cached = await AsyncStorage.getItem(cacheKey);
                     if (cached) {
                         setData(JSON.parse(cached));
-                        // Optional: Set a specific error or info message that we are offline
-                        // setError('Showing offline data'); 
                     } else {
-                        setError(err.message || 'Failed to load analysis.');
+                        if (err.status === 404) {
+                            setData(null);
+                        } else {
+                            setError(err.message || 'Failed to load analysis.');
+                        }
                     }
                 } catch (cacheErr) {
                     setError(err.message || 'Failed to load analysis.');
@@ -127,9 +126,19 @@ export default function DataScreen() {
         fetchData();
     }, [token, selectedChild]);
 
-    const languagePercent = data?.language_units_percent ?? 0;
-    const vocabEntries = data?.vocabulary_breakdown ?? [];
-    const interactionScore = data?.interaction_meter ?? 0;
+    const aggregates = data?.aggregates ?? {};
+    const dailyTargetUtterances = 50;
+    const languagePercent = Math.min(100, Math.round((aggregates.total_utterances ?? 0) / dailyTargetUtterances * 100));
+
+    const posDistribution = aggregates.pos_distribution ?? {};
+    const vocabEntries = Object.entries(posDistribution)
+        .filter(([label]) => ['NOUN', 'VERB', 'ADJ', 'ADV'].includes(label))
+        .map(([label, value]) => ({ label, value }))
+        .sort((a, b) => b.value - a.value);
+
+    const targetWPM = 100;
+    const currentWPM = aggregates.articulation_wpm ?? 0;
+    const interactionScore = Math.min(100, Math.round((currentWPM / targetWPM) * 50 + 25));
 
     return (
         <ScreenContainer>
@@ -140,8 +149,8 @@ export default function DataScreen() {
             <ScrollView>
                 <View style={styles.section}>
                     <Text variant="h3" style={{ marginBottom: Spacing.md }}>Language Units</Text>
-                    <View style={styles.card}>
-                        <LanguageUnitsRing percent={languagePercent} />
+                    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <LanguageUnitsRing percent={languagePercent} colors={colors} />
                         <Text variant="body" align="center" style={{ marginTop: Spacing.md }}>
                             Daily target completion
                         </Text>
@@ -150,27 +159,27 @@ export default function DataScreen() {
 
                 <View style={styles.section}>
                     <Text variant="h3" style={{ marginBottom: Spacing.md }}>Vocabulary Breakdown</Text>
-                    <View style={styles.card}>
-                        <VocabularyBars vocabulary={vocabEntries} />
+                    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <VocabularyBars vocabulary={vocabEntries} colors={colors} />
                     </View>
                 </View>
 
                 <View style={styles.section}>
                     <Text variant="h3" style={{ marginBottom: Spacing.md }}>Interaction Meter</Text>
-                    <View style={styles.card}>
-                        <InteractionMeter score={interactionScore} />
+                    <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <InteractionMeter score={interactionScore} colors={colors} />
                     </View>
                 </View>
 
                 {loading && (
                     <View style={styles.section}>
-                        <Text variant="small" color={Colors.textLight}>Loading latest data…</Text>
+                        <Text variant="small">Loading latest data…</Text>
                     </View>
                 )}
 
                 {error ? (
                     <View style={styles.section}>
-                        <Text style={{ color: Colors.danger }}>{error}</Text>
+                        <Text style={{ color: colors.danger }}>{error}</Text>
                     </View>
                 ) : null}
             </ScrollView>
@@ -187,12 +196,10 @@ const styles = StyleSheet.create({
         marginBottom: Spacing.xxl,
     },
     card: {
-        backgroundColor: Colors.surface,
         padding: Spacing.md,
         borderRadius: 8,
         marginBottom: Spacing.sm,
         borderWidth: 1,
-        borderColor: Colors.border,
     },
     ringContainer: {
         alignItems: 'center',
@@ -210,30 +217,25 @@ const styles = StyleSheet.create({
         flex: 1,
         height: 10,
         borderRadius: 5,
-        backgroundColor: Colors.background,
         overflow: 'hidden',
     },
     vocabBarFill: {
         height: 10,
         borderRadius: 5,
-        backgroundColor: Colors.primary,
     },
     meterTrack: {
         width: '100%',
         height: 12,
         borderRadius: 6,
-        backgroundColor: Colors.background,
         overflow: 'hidden',
         marginBottom: Spacing.sm,
     },
     meterFill: {
         height: 12,
         borderRadius: 6,
-        backgroundColor: Colors.primary,
     },
     meterLabels: {
         flexDirection: 'row',
         justifyContent: 'space-between',
     },
 });
-
